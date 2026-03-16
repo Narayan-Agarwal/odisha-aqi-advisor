@@ -264,7 +264,7 @@ def plot_industrial_vs_urban(df: pd.DataFrame, out_dir: str = "charts") -> str:
     palette = {t: TIER_COLOURS[t] for t in tier_order}
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.boxplot(data=df, x="tier", y="aqi", order=tier_order,
-                palette=palette, ax=ax)
+                hue="tier", palette=palette, legend=False, ax=ax)
     ax.set_xlabel("City Tier")
     ax.set_ylabel("AQI")
     ax.set_title("AQI Distribution by City Tier")
