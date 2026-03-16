@@ -1,0 +1,15 @@
+[
+  "aqi_yesterday",
+  "aqi_7day_avg",
+  "pm25_lag1",
+  "pm10_lag1",
+  "so2_lag1",
+  "no2_lag1",
+  "month",
+  "day_of_week",
+  "is_winter",
+  "is_monsoon",
+  "is_diwali_week",
+  "is_industrial_peak",
+  "tier_encoded"
+]
