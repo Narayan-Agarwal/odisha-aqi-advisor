@@ -18,12 +18,9 @@ FEATURE_COLS = [
     "so2_lag1",
     "no2_lag1",
     "month",
-    "day_of_week",
     "is_winter",
     "is_monsoon",
-    "is_diwali_week",
     "is_industrial_peak",
-    "tier_encoded",
 ]
 
 TARGET_COL = "aqi_target"
@@ -76,16 +73,15 @@ def add_target(df: pd.DataFrame, city_col: str = "city") -> pd.DataFrame:
 
 
 def add_seasonal_flags(df: pd.DataFrame) -> pd.DataFrame:
-    """Add month, day_of_week, is_winter, is_monsoon flags.
+    """Add month, is_winter, is_monsoon flags.
 
     is_winter: 1 if month in {11, 12, 1} else 0
     is_monsoon: 1 if month in {7, 8, 9} else 0
     """
     df = df.copy()
-    df["month"]       = df["date"].dt.month.astype(int)
-    df["day_of_week"] = df["date"].dt.dayofweek.astype(int)
-    df["is_winter"]   = df["month"].isin([11, 12, 1]).astype(int)
-    df["is_monsoon"]  = df["month"].isin([7, 8, 9]).astype(int)
+    df["month"]      = df["date"].dt.month.astype(int)
+    df["is_winter"]  = df["month"].isin([11, 12, 1]).astype(int)
+    df["is_monsoon"] = df["month"].isin([7, 8, 9]).astype(int)
     return df
 
 
@@ -157,10 +153,8 @@ def run_full_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     2. add_rolling_features
     3. add_target
     4. add_seasonal_flags
-    5. add_diwali_flag
-    6. add_industrial_peak_flag
-    7. encode_tier
-    8. Drop rows where aqi_target or aqi_yesterday is NaN
+    5. add_industrial_peak_flag
+    6. Drop rows where aqi_target or aqi_yesterday is NaN
 
     Returns the fully featured DataFrame (all original columns + engineered features).
     """
@@ -168,9 +162,7 @@ def run_full_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     df = add_rolling_features(df)
     df = add_target(df)
     df = add_seasonal_flags(df)
-    df = add_diwali_flag(df)
     df = add_industrial_peak_flag(df)
-    df = encode_tier(df)
     # Drop rows where target or primary lag is NaN (start/end of each city series)
     df = df.dropna(subset=["aqi_target", "aqi_yesterday"]).reset_index(drop=True)
     return df

@@ -9,7 +9,7 @@ import tempfile
 import pandas as pd
 import pytest
 
-from src.data_loader import load_feature_columns, load_model, load_model_results
+from src.data_loader import load_feature_columns, load_model, load_model_results, CITIES, URBAN_CITIES, CLEAN_CITIES
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +69,36 @@ def test_csv_roundtrip_preserves_dataframe():
         pd.testing.assert_frame_equal(df.reset_index(drop=True), df2.reset_index(drop=True))
     finally:
         os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# V3 — City list correctness
+# ---------------------------------------------------------------------------
+
+def test_cities_has_exactly_10_keys():
+    assert len(CITIES) == 10
+
+
+def test_new_cities_present():
+    for city in ["Balasore", "Berhampur", "Rayagada"]:
+        assert city in CITIES, f"{city} missing from CITIES"
+
+
+def test_old_cities_absent():
+    for city in ["Bhadrak", "Ganjam", "Koraput"]:
+        assert city not in CITIES, f"{city} should have been removed"
+
+
+def test_urban_cities_updated():
+    assert "Balasore" in URBAN_CITIES
+    assert "Bhadrak" not in URBAN_CITIES
+
+
+def test_clean_cities_updated():
+    assert "Berhampur" in CLEAN_CITIES
+    assert "Rayagada" in CLEAN_CITIES
+    assert "Ganjam" not in CLEAN_CITIES
+    assert "Koraput" not in CLEAN_CITIES
 
 
 # ---------------------------------------------------------------------------

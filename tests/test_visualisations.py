@@ -1,14 +1,10 @@
 """
-Unit tests for src/visualisations.py
-Tasks 7.2, 7.3
+Unit tests for src/visualisations.py (V3 — Plotly)
 """
-import glob
-import os
-import tempfile
-
 import numpy as np
 import pandas as pd
 import pytest
+import plotly.graph_objects as go
 
 from src.visualisations import (
     plot_city_month_heatmap,
@@ -17,6 +13,12 @@ from src.visualisations import (
     plot_monsoon_dip,
     plot_tier_comparison,
     plot_yoy_trend,
+    plot_industrial_corridor,
+    plot_pollutant_correlation,
+    plot_pollutant_dominance,
+    plot_model_comparison,
+    plot_historical_aqi,
+    plot_feature_importance_city,
 )
 
 
@@ -42,76 +44,129 @@ def _make_df():
     return pd.DataFrame(rows)
 
 
-# ---------------------------------------------------------------------------
-# Task 7.3 — Each chart function returns a valid .png path
-# ---------------------------------------------------------------------------
-
 @pytest.fixture(scope="module")
 def sample_df():
     return _make_df()
 
 
-@pytest.fixture()
-def tmp_charts(tmp_path):
-    return str(tmp_path)
+# ---------------------------------------------------------------------------
+# All chart functions return go.Figure
+# ---------------------------------------------------------------------------
+
+def test_plot_tier_comparison_returns_figure(sample_df):
+    fig = plot_tier_comparison(sample_df)
+    assert isinstance(fig, go.Figure)
 
 
-def test_plot_tier_comparison_returns_png(sample_df, tmp_charts):
-    path = plot_tier_comparison(sample_df, out_dir=tmp_charts)
-    assert path.endswith(".png")
-    assert os.path.exists(path)
+def test_plot_city_month_heatmap_returns_figure(sample_df):
+    fig = plot_city_month_heatmap(sample_df)
+    assert isinstance(fig, go.Figure)
 
 
-def test_plot_city_month_heatmap_returns_png(sample_df, tmp_charts):
-    path = plot_city_month_heatmap(sample_df, out_dir=tmp_charts)
-    assert path.endswith(".png")
-    assert os.path.exists(path)
+def test_plot_monsoon_dip_returns_figure(sample_df):
+    fig = plot_monsoon_dip(sample_df)
+    assert isinstance(fig, go.Figure)
 
 
-def test_plot_monsoon_dip_returns_png(sample_df, tmp_charts):
-    path = plot_monsoon_dip(sample_df, out_dir=tmp_charts)
-    assert path.endswith(".png")
-    assert os.path.exists(path)
+def test_plot_yoy_trend_returns_figure(sample_df):
+    fig = plot_yoy_trend(sample_df)
+    assert isinstance(fig, go.Figure)
 
 
-def test_plot_yoy_trend_returns_png(sample_df, tmp_charts):
-    path = plot_yoy_trend(sample_df, out_dir=tmp_charts)
-    assert path.endswith(".png")
-    assert os.path.exists(path)
+def test_plot_diwali_spike_returns_figure(sample_df):
+    fig = plot_diwali_spike(sample_df)
+    assert isinstance(fig, go.Figure)
 
 
-def test_plot_diwali_spike_returns_png(sample_df, tmp_charts):
-    path = plot_diwali_spike(sample_df, out_dir=tmp_charts)
-    assert path.endswith(".png")
-    assert os.path.exists(path)
+def test_plot_industrial_vs_urban_returns_figure(sample_df):
+    fig = plot_industrial_vs_urban(sample_df)
+    assert isinstance(fig, go.Figure)
 
 
-def test_plot_industrial_vs_urban_returns_png(sample_df, tmp_charts):
-    path = plot_industrial_vs_urban(sample_df, out_dir=tmp_charts)
-    assert path.endswith(".png")
-    assert os.path.exists(path)
+def test_plot_industrial_corridor_returns_figure(sample_df):
+    fig = plot_industrial_corridor(sample_df)
+    assert isinstance(fig, go.Figure)
+
+
+def test_plot_pollutant_correlation_returns_figure(sample_df):
+    fig = plot_pollutant_correlation(sample_df)
+    assert isinstance(fig, go.Figure)
+
+
+def test_plot_pollutant_dominance_returns_figure(sample_df):
+    fig = plot_pollutant_dominance(sample_df)
+    assert isinstance(fig, go.Figure)
+
+
+def test_plot_historical_aqi_monthly_returns_figure(sample_df):
+    city = "Angul"
+    start = pd.Timestamp("2021-01-01")
+    end = pd.Timestamp("2022-12-31")
+    fig = plot_historical_aqi(sample_df, city, start, end, granularity="monthly")
+    assert isinstance(fig, go.Figure)
+
+
+def test_plot_historical_aqi_daily_returns_figure(sample_df):
+    city = "Angul"
+    start = pd.Timestamp("2021-01-01")
+    end = pd.Timestamp("2022-12-31")
+    fig = plot_historical_aqi(sample_df, city, start, end, granularity="daily")
+    assert isinstance(fig, go.Figure)
 
 
 # ---------------------------------------------------------------------------
-# Task 7.2 — Property 16: Chart generation is idempotent
+# All traces have non-empty hovertemplate
 # ---------------------------------------------------------------------------
 
-def test_chart_idempotent(sample_df, tmp_charts):
-    """Calling the same chart function twice produces identical file sizes."""
-    path1 = plot_tier_comparison(sample_df, out_dir=tmp_charts)
-    size1 = os.path.getsize(path1)
-    path2 = plot_tier_comparison(sample_df, out_dir=tmp_charts)
-    size2 = os.path.getsize(path2)
-    assert path1 == path2
-    # File should be overwritten (same path), size within 5% tolerance
-    assert abs(size1 - size2) / max(size1, 1) < 0.05
+def _all_traces_have_hovertemplate(fig: go.Figure) -> bool:
+    for trace in fig.data:
+        ht = getattr(trace, "hovertemplate", None)
+        if not ht:
+            return False
+    return True
+
+
+def test_tier_comparison_hovertemplates(sample_df):
+    fig = plot_tier_comparison(sample_df)
+    assert _all_traces_have_hovertemplate(fig)
+
+
+def test_heatmap_hovertemplates(sample_df):
+    fig = plot_city_month_heatmap(sample_df)
+    assert _all_traces_have_hovertemplate(fig)
+
+
+def test_historical_aqi_hovertemplates(sample_df):
+    fig = plot_historical_aqi(sample_df, "Angul",
+                              pd.Timestamp("2021-01-01"), pd.Timestamp("2022-12-31"))
+    assert _all_traces_have_hovertemplate(fig)
 
 
 # ---------------------------------------------------------------------------
-# Task 7.3 — Verify charts/ directory has expected PNGs after pipeline
+# Height parameter is respected
 # ---------------------------------------------------------------------------
 
-def test_charts_directory_has_pngs():
-    """After running the offline pipeline, charts/ should have PNG files."""
-    pngs = glob.glob("charts/*.png")
-    assert len(pngs) > 0, "No PNG files found in charts/ — run notebooks 03 and 04 first"
+def test_chart_height_250(sample_df):
+    fig = plot_tier_comparison(sample_df, height=250)
+    assert fig.layout.height == 250
+
+
+def test_chart_height_380(sample_df):
+    fig = plot_monsoon_dip(sample_df, height=380)
+    assert fig.layout.height == 380
+
+
+# ---------------------------------------------------------------------------
+# Model comparison chart
+# ---------------------------------------------------------------------------
+
+def test_plot_model_comparison_returns_figure():
+    results = pd.DataFrame({
+        "city": ["Angul", "Angul", "Bhubaneswar", "Bhubaneswar"],
+        "model_type": ["lr", "xgb", "lr", "xgb"],
+        "mae": [40.0, 38.0, 25.0, 24.0],
+        "rmse": [50.0, 48.0, 32.0, 30.0],
+        "r2": [0.4, 0.45, 0.3, 0.35],
+    })
+    fig = plot_model_comparison(results)
+    assert isinstance(fig, go.Figure)

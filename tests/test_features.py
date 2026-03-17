@@ -11,16 +11,14 @@ from hypothesis.extra.pandas import column, data_frames, range_indexes
 
 from src.features import (
     FEATURE_COLS,
-    add_diwali_flag,
     add_industrial_peak_flag,
     add_lag_features,
     add_rolling_features,
     add_seasonal_flags,
     build_feature_matrix,
-    encode_tier,
     run_full_pipeline,
 )
-from src.data_loader import CITIES, DIWALI_DATES
+from src.data_loader import CITIES
 
 
 # ---------------------------------------------------------------------------
@@ -50,14 +48,11 @@ def test_build_feature_matrix_raises_for_missing_column():
         build_feature_matrix(df, feature_cols=["a", "missing_col"])
 
 
-def test_encode_tier_maps_all_tiers():
-    cities = list(CITIES.keys())
-    df = pd.DataFrame({"city": cities, "date": pd.date_range("2021-01-01", periods=len(cities))})
-    result = encode_tier(df)
-    for city in cities:
-        expected = CITIES[city]["tier_code"]
-        actual = result.loc[result["city"] == city, "tier_encoded"].iloc[0]
-        assert actual == expected, f"{city}: expected {expected}, got {actual}"
+def test_add_seasonal_flags_no_day_of_week():
+    """day_of_week should NOT be present in V3 feature pipeline."""
+    df = pd.DataFrame({"date": pd.to_datetime(["2021-06-15"])})
+    result = add_seasonal_flags(df)
+    assert "day_of_week" not in result.columns
 
 
 def test_add_seasonal_flags_winter():
@@ -103,20 +98,6 @@ def test_rolling_7d_mean_correctness():
         expected = window.mean()
         actual = result.loc[i, "aqi_7day_avg"]
         assert abs(actual - expected) < 1e-6, f"Row {i}: expected {expected:.4f}, got {actual:.4f}"
-
-
-# ---------------------------------------------------------------------------
-# Task 4.5 — Property 7: diwali_week_flag correctness
-# ---------------------------------------------------------------------------
-
-def test_diwali_flag_within_3_days():
-    diwali_ts = pd.Timestamp(DIWALI_DATES[0])
-    dates_in = [diwali_ts + pd.Timedelta(days=d) for d in range(-3, 4)]
-    dates_out = [diwali_ts + pd.Timedelta(days=d) for d in [-4, 4, 10, -10]]
-    df_in = pd.DataFrame({"date": dates_in})
-    df_out = pd.DataFrame({"date": dates_out})
-    assert add_diwali_flag(df_in)["is_diwali_week"].eq(1).all()
-    assert add_diwali_flag(df_out)["is_diwali_week"].eq(0).all()
 
 
 # ---------------------------------------------------------------------------

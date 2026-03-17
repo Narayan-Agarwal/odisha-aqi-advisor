@@ -1,4 +1,4 @@
-"""Standalone script: train all models, save artefacts, generate charts."""
+"""Standalone script: train all models, save artefacts (V3 — Plotly, no PNG charts)."""
 import sys, os, json, glob
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -9,21 +9,14 @@ from src.model import (
     chronological_split, train_linear, train_xgboost,
     evaluate_model, save_model, load_and_verify,
 )
-from src.visualisations import (
-    plot_feature_importance_city,
-    plot_feature_importance_comparison,
-    plot_model_comparison,
-)
 
 FEATURED_CSV = "data/processed/featured.csv"
 MODELS_DIR   = "models"
-CHARTS_DIR   = "charts"
 RESULTS_CSV  = "data/processed/model_results.csv"
 FEAT_JSON    = "models/feature_columns.json"
 TARGET_COL   = "aqi_target"
 
 os.makedirs(MODELS_DIR, exist_ok=True)
-os.makedirs(CHARTS_DIR, exist_ok=True)
 
 df = pd.read_csv(FEATURED_CSV, parse_dates=["date"])
 cities = sorted(df["city"].unique())
@@ -74,17 +67,6 @@ results_df.to_csv(RESULTS_CSV, index=False)
 print(f"Written {RESULTS_CSV} ({len(results_df)} rows)")
 print(results_df.to_string(index=False))
 
-# Feature importance charts (10 per-city + 1 comparison + 1 model comparison)
-for city, model in xgb_models.items():
-    p = plot_feature_importance_city(city, model, FEATURE_COLS, out_dir=CHARTS_DIR)
-    print(f"Saved: {p}")
-
-p = plot_feature_importance_comparison(xgb_models, FEATURE_COLS, out_dir=CHARTS_DIR)
-print(f"Saved: {p}")
-
-p = plot_model_comparison(results_df, out_dir=CHARTS_DIR)
-print(f"Saved: {p}")
-
 # Round-trip verification
 all_ok = True
 for city in cities:
@@ -106,4 +88,3 @@ for city in cities:
 
 print(f"\nRound-trip verification: {'PASSED' if all_ok else 'FAILED'}")
 print(f".joblib count: {len(glob.glob(os.path.join(MODELS_DIR, '*.joblib')))}")
-print(f".png count:    {len(glob.glob(os.path.join(CHARTS_DIR, '*.png')))}")

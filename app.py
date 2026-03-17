@@ -1,24 +1,28 @@
 """
-app.py — Streamlit entry point for the Odisha AQI Advisor.
+app.py — Streamlit entry point for the Odisha AQI Advisor V3.
 Run: streamlit run app.py  (from the odisha-aqi-advisor/ directory)
 """
 import os
 from datetime import date
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import streamlit as st
 
 from src.advisory import get_advisory
+from src.constants import AQI_BANDS, TIER_LABELS
 from src.data_loader import (
     CITIES, TIER_COLOURS, INDUSTRIAL_CITIES, CORRIDOR_CITIES,
     load_featured_csv, load_model_results, load_model, load_feature_columns,
 )
 from src.features import FEATURE_COLS
+from src.visualisations import (
+    plot_tier_comparison, plot_city_month_heatmap, plot_monsoon_dip,
+    plot_yoy_trend, plot_industrial_corridor, plot_pollutant_correlation,
+    plot_diwali_spike, plot_pollutant_dominance, plot_feature_importance_comparison,
+    plot_feature_importance_city, plot_model_comparison, plot_industrial_vs_urban,
+    plot_historical_aqi,
+)
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -28,6 +32,41 @@ st.set_page_config(
     page_icon="🌫️",
     layout="wide",
 )
+
+# Fix sidebar width to 260px
+st.markdown(
+    "<style>[data-testid='stSidebar'] { min-width: 260px; max-width: 260px; }</style>",
+    unsafe_allow_html=True,
+)
+
+# JS snippet to inject screen_width as query param
+st.components.v1.html(
+    """
+    <script>
+    const w = window.innerWidth;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('screen_width') !== String(w)) {
+        url.searchParams.set('screen_width', w);
+        window.history.replaceState({}, '', url.toString());
+        window.location.reload();
+    }
+    </script>
+    """,
+    height=0,
+)
+
+
+def layout_columns(screen_width: int) -> int:
+    """Returns 1 if screen_width < 768, else 2."""
+    return 1 if screen_width < 768 else 2
+
+
+def _get_screen_width() -> int:
+    try:
+        return int(st.query_params.get("screen_width", 1024))
+    except (ValueError, TypeError):
+        return 1024
+
 
 # ---------------------------------------------------------------------------
 # Cached loaders
@@ -61,23 +100,18 @@ def build_sidebar(df: pd.DataFrame):
     st.sidebar.title("🌫️ Odisha AQI Advisor")
     st.sidebar.markdown("---")
 
-    # City selector grouped by tier
-    tier_groups = {
-        "🏭 Heavy Industrial": [c for c, v in CITIES.items() if v["tier"] == "heavy_industrial"],
-        "🏙️ Urban":            [c for c, v in CITIES.items() if v["tier"] == "urban"],
-        "🌿 Clean Baseline":   [c for c, v in CITIES.items() if v["tier"] == "clean_baseline"],
-    }
-    all_cities = [c for cities in tier_groups.values() for c in cities]
+    # Dark mode toggle
+    dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=False)
+    if dark_mode:
+        st.markdown(
+            "<style>:root { color-scheme: dark; } "
+            ".stApp { background-color: #0e1117; color: #fafafa; }</style>",
+            unsafe_allow_html=True,
+        )
 
-    city_options = []
-    for group, cities in tier_groups.items():
-        city_options.append(f"── {group} ──")
-        city_options.extend(cities)
-
-    # Default to first real city
-    default_idx = city_options.index(all_cities[0])
-    selected_raw = st.sidebar.selectbox("Select City", city_options, index=default_idx)
-    city = selected_raw if selected_raw in all_cities else all_cities[0]
+    # Plain alphabetical city list
+    all_cities = sorted(CITIES.keys())
+    city = st.sidebar.selectbox("Select City", all_cities)
 
     # Date range
     min_date = df["date"].min().date()
@@ -94,7 +128,7 @@ def build_sidebar(df: pd.DataFrame):
         start_date, end_date = min_date, max_date
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Data: CPCB 2019–2023 | 10 Odisha cities")
+    st.sidebar.caption("Data: CPCB 2019–2023 | OpenAQ API\n\n10 Odisha cities")
 
     return city, pd.Timestamp(start_date), pd.Timestamp(end_date)
 
@@ -104,9 +138,13 @@ def build_sidebar(df: pd.DataFrame):
 # ---------------------------------------------------------------------------
 
 def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end: pd.Timestamp):
-    st.header(f"📍 {city} — City Dashboard")
+    screen_width = _get_screen_width()
+    chart_height = 250 if screen_width < 768 else 380
 
-    # Load model (XGBoost preferred, fallback to LR)
+    # Welcome banner
+    st.info("👋 Welcome to the Odisha AQI Advisor — explore air quality forecasts and trends for 10 cities across Odisha.")
+
+    # Load model
     model_type_used = "xgb"
     try:
         model = get_model(city, "xgb")
@@ -126,7 +164,6 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
     X_latest = latest[feat_cols].values.reshape(1, -1)
     pred_aqi = float(model.predict(X_latest)[0])
 
-    # Advisory
     category, message, colour = get_advisory(pred_aqi)
 
     # Prediction card
@@ -134,41 +171,54 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
     with col1:
         st.metric("Next-Day AQI Forecast", f"{pred_aqi:.0f}", help=f"Model: {model_type_used.upper()}")
     with col2:
+        # Fixed-width badge so width doesn't shift between categories
         st.markdown(
             f"<div style='background:{colour};padding:12px;border-radius:8px;"
-            f"color:white;font-weight:bold;text-align:center'>{category}</div>",
+            f"color:white;font-weight:bold;text-align:center;min-width:160px'>{category}</div>",
             unsafe_allow_html=True,
         )
     with col3:
         st.info(message)
 
+    # What is AQI? expander
+    with st.expander("ℹ️ What is AQI?"):
+        st.markdown(
+            "The **Air Quality Index (AQI)** is a number used by government agencies to communicate "
+            "how polluted the air currently is or how polluted it is forecast to become. "
+            "It is calculated from concentrations of PM2.5, PM10, SO₂, and NO₂ using the CPCB formula. "
+            "A lower AQI means cleaner air.\n\n"
+            "| Range | Category |\n|---|---|\n"
+            "| 0–50 | Good |\n| 51–100 | Satisfactory |\n| 101–200 | Moderate |\n"
+            "| 201–300 | Poor |\n| 301–400 | Very Poor |\n| 401–500 | Severe |"
+        )
+
     st.markdown("---")
 
-    # Historical AQI line chart with band shading
-    filtered = city_df[(city_df["date"] >= start) & (city_df["date"] <= end)]
-    if filtered.empty:
-        st.warning("No data for selected date range.")
+    # Historical AQI + Feature importance side by side
+    ncols = layout_columns(screen_width)
+    if ncols == 2:
+        left, right = st.columns(2)
     else:
-        fig, ax = plt.subplots(figsize=(14, 4))
-        ax.plot(filtered["date"], filtered["aqi"], color=TIER_COLOURS.get(CITIES[city]["tier"], "#888"), linewidth=0.9)
-        # AQI band shading
-        bands = [(0, 50, "#00B050", "Good"), (51, 100, "#92D050", "Satisfactory"),
-                 (101, 200, "#FFFF00", "Moderate"), (201, 300, "#FF7C00", "Poor"),
-                 (301, 400, "#FF0000", "Very Poor"), (401, 500, "#7B0023", "Severe")]
-        for lo, hi, col, lbl in bands:
-            ax.axhspan(lo, hi, alpha=0.08, color=col)
-        ax.set_xlabel("Date"); ax.set_ylabel("AQI")
-        ax.set_title(f"{city} — Historical AQI ({start.date()} to {end.date()})")
-        st.pyplot(fig)
-        plt.close(fig)
+        left = right = st.container()
 
-    # Feature importance chart
-    fi_path = os.path.join("charts", f"feature_importance_{city.lower()}.png")
-    if os.path.exists(fi_path):
-        st.subheader("Feature Importance (XGBoost)")
-        st.image(fi_path)
-    else:
-        st.info("Feature importance chart not found. Run notebook 04 first.")
+    with left:
+        granularity = st.radio("Chart granularity", ["Monthly", "Daily"], horizontal=True, key="gran")
+        fig_hist = plot_historical_aqi(
+            df, city, start, end,
+            granularity=granularity.lower(),
+            height=chart_height,
+        )
+        st.plotly_chart(fig_hist, use_container_width=True)
+        st.caption(f"Historical AQI for {city} from {start.date()} to {end.date()}.")
+
+    with right:
+        try:
+            xgb_model = get_model(city, "xgb")
+            fig_fi = plot_feature_importance_city(city, xgb_model, feat_cols, height=chart_height)
+            st.plotly_chart(fig_fi, use_container_width=True)
+            st.caption("XGBoost feature importance — which inputs drive the forecast most.")
+        except FileNotFoundError:
+            st.info("Feature importance unavailable — XGBoost model not found.")
 
 
 # ---------------------------------------------------------------------------
@@ -177,50 +227,53 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
 
 def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp):
     st.header("🏙️ Compare Cities")
+    screen_width = _get_screen_width()
+    chart_height = 250 if screen_width < 768 else 380
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
 
-    # Static charts
-    for fname, caption in [
-        ("tier_comparison.png",           "Average AQI by City Tier"),
-        ("industrial_vs_urban_aqi.png",   "AQI Distribution by Tier"),
-        ("city_month_heatmap.png",        "Monthly AQI Heatmap"),
-        ("pollutant_dominance.png",       "Dominant Pollutant by City"),
-        ("feature_importance_comparison.png", "Feature Importance Across Cities"),
-    ]:
-        path = os.path.join("charts", fname)
-        if os.path.exists(path):
-            st.subheader(caption)
-            st.image(path)
+    # Tier comparison + box plot side by side
+    col1, col2 = st.columns(2)
+    with col1:
+        fig = plot_tier_comparison(filtered, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Average AQI per city, coloured by tier.")
+    with col2:
+        fig = plot_industrial_vs_urban(filtered, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("AQI distribution across city tiers.")
 
-    st.markdown("---")
+    # Full-width heatmap
+    fig = plot_city_month_heatmap(filtered, height=chart_height)
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("Monthly average AQI heatmap — darker = worse air quality.")
 
-    if filtered.empty:
-        st.warning("No data for selected date range.")
-        return
+    # Pollutant dominance + monsoon side by side
+    col3, col4 = st.columns(2)
+    with col3:
+        fig = plot_pollutant_dominance(filtered, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Stacked average pollutant concentrations per city.")
+    with col4:
+        fig = plot_monsoon_dip(filtered, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Seasonal AQI pattern — note the monsoon dip in Jul–Sep.")
 
-    # Live multi-line AQI chart
-    st.subheader("Multi-City AQI — Selected Date Range")
-    fig, ax = plt.subplots(figsize=(14, 5))
-    for city in sorted(filtered["city"].unique()):
-        sub = filtered[filtered["city"] == city].sort_values("date")
-        tier = CITIES.get(city, {}).get("tier", "urban")
-        ax.plot(sub["date"], sub["aqi"], label=city, color=TIER_COLOURS.get(tier, "#888"), alpha=0.8, linewidth=0.9)
-    ax.set_xlabel("Date"); ax.set_ylabel("AQI")
-    ax.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
-    st.pyplot(fig); plt.close(fig)
-
-    # Mean AQI bar chart
-    st.subheader("Mean AQI per City — Selected Date Range")
-    means = filtered.groupby("city")["aqi"].mean().sort_values(ascending=False)
-    fig2, ax2 = plt.subplots(figsize=(10, 4))
-    colours = [TIER_COLOURS.get(CITIES.get(c, {}).get("tier", "urban"), "#888") for c in means.index]
-    ax2.bar(means.index, means.values, color=colours)
-    ax2.set_xlabel("City"); ax2.set_ylabel("Mean AQI")
-    ax2.tick_params(axis="x", rotation=45)
-    patches = [mpatches.Patch(color=v, label=k) for k, v in TIER_COLOURS.items()]
-    ax2.legend(handles=patches)
-    st.pyplot(fig2); plt.close(fig2)
+    # Full-width feature importance comparison
+    try:
+        xgb_models = {}
+        feat_cols = get_feature_columns()
+        for city in CITIES:
+            try:
+                xgb_models[city] = get_model(city, "xgb")
+            except FileNotFoundError:
+                pass
+        if xgb_models:
+            fig = plot_feature_importance_comparison(xgb_models, feat_cols, height=chart_height)
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("XGBoost feature importance heatmap across all cities.")
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -229,35 +282,32 @@ def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
 
 def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp):
     st.header("🏭 Industrial Corridor")
+    screen_width = _get_screen_width()
+    chart_height = 250 if screen_width < 768 else 380
 
-    industrial_df = df[df["city"].isin(INDUSTRIAL_CITIES)]
-    filtered = industrial_df[(industrial_df["date"] >= start) & (industrial_df["date"] <= end)]
+    st.markdown(
+        "The western Odisha industrial corridor — Jharsuguda, Angul, and Talcher — hosts "
+        "some of India's largest aluminium smelters, coal-fired power plants, and coalfields. "
+        "This tab explores how industrial activity drives AQI patterns in the region."
+    )
 
-    # Live corridor chart
-    st.subheader("Corridor Cities — Daily AQI")
-    corridor_filtered = filtered[filtered["city"].isin(CORRIDOR_CITIES)]
-    if corridor_filtered.empty:
-        st.warning("No corridor data for selected range.")
-    else:
-        corridor_colours = {"Jharsuguda": "#E74C3C", "Angul": "#E67E22", "Talcher": "#922B21"}
-        fig, ax = plt.subplots(figsize=(14, 4))
-        for city in CORRIDOR_CITIES:
-            sub = corridor_filtered[corridor_filtered["city"] == city].sort_values("date")
-            ax.plot(sub["date"], sub["aqi"], label=city, color=corridor_colours.get(city, "#888"), linewidth=0.9)
-        ax.set_xlabel("Date"); ax.set_ylabel("AQI")
-        ax.legend()
-        st.pyplot(fig); plt.close(fig)
+    filtered = df[(df["date"] >= start) & (df["date"] <= end)]
 
-    # Static charts
-    for fname, caption in [
-        ("diwali_spike.png",         "Diwali AQI Spike Pattern"),
-        ("pollutant_correlation.png","Pollutant Correlation Matrix"),
-        ("monsoon_dip.png",          "Monsoon Effect on AQI"),
-    ]:
-        path = os.path.join("charts", fname)
-        if os.path.exists(path):
-            st.subheader(caption)
-            st.image(path)
+    # Full-width corridor chart
+    fig = plot_industrial_corridor(filtered, height=chart_height)
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("Monthly average AQI for the three corridor cities.")
+
+    # Diwali spike + pollutant correlation side by side
+    col1, col2 = st.columns(2)
+    with col1:
+        fig = plot_diwali_spike(filtered, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("AQI spikes around Diwali (Oct–Nov) across all cities.")
+    with col2:
+        fig = plot_pollutant_correlation(filtered, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Correlation between pollutants — PM2.5 and PM10 tend to move together.")
 
 
 # ---------------------------------------------------------------------------
@@ -266,27 +316,44 @@ def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Ti
 
 def render_model_performance():
     st.header("📊 Model Performance")
+    screen_width = _get_screen_width()
+    chart_height = 250 if screen_width < 768 else 380
+
+    st.markdown(
+        "Two models are trained per city: **Linear Regression** (fast, interpretable baseline) "
+        "and **XGBoost** (gradient-boosted trees, typically more accurate). "
+        "MAE (Mean Absolute Error) measures average prediction error in AQI units — lower is better. "
+        "R² measures how much variance the model explains — closer to 1.0 is better."
+    )
 
     try:
         results = get_model_results()
     except FileNotFoundError:
         st.error("model_results.csv not found. Run notebook 04 to train models first.")
-        st.code("jupyter nbconvert --to notebook --execute notebooks/04_modelling.ipynb")
         return
 
-    st.subheader("Results Table")
-    st.dataframe(results[["city", "model_type", "rmse", "mae", "r2"]].round(3), use_container_width=True)
+    # Rename model_type for display
+    display = results.copy()
+    display["model_type"] = display["model_type"].map({"lr": "Linear Regression", "xgb": "XGBoost"})
+    st.dataframe(
+        display[["city", "model_type", "rmse", "mae", "r2"]].round(3),
+        use_container_width=True,
+    )
 
-    for fname, caption in [
-        ("model_comparison.png", "MAE Comparison: Linear Regression vs XGBoost"),
-        ("yoy_trend.png",        "Year-on-Year AQI Trend"),
-    ]:
-        path = os.path.join("charts", fname)
-        if os.path.exists(path):
-            st.subheader(caption)
-            st.image(path)
-        else:
-            st.info(f"{fname} not found. Run notebook 03/04 first.")
+    # MAE comparison + YoY trend side by side
+    col1, col2 = st.columns(2)
+    with col1:
+        fig = plot_model_comparison(results, height=chart_height)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("MAE comparison between Linear Regression and XGBoost per city.")
+    with col2:
+        try:
+            df = get_featured()
+            fig = plot_yoy_trend(df, height=chart_height)
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("Year-on-year average AQI trend across all cities.")
+        except FileNotFoundError:
+            st.info("featured.csv not found — YoY chart unavailable.")
 
 
 # ---------------------------------------------------------------------------

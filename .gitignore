@@ -1,5 +1,9 @@
-data/raw/
+data/raw/*.csv
+data/raw/unified_raw.csv
+data/data_sources_log.txt
 data/processed/unified_clean.csv
+charts/
+.hypothesis/
 __pycache__/
 *.pyc
 .DS_Store

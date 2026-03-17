@@ -27,11 +27,11 @@ CITIES = {
                     'industry': 'Traffic, construction activity, urban growth'},
     'Cuttack':     {'tier': 'urban',            'tier_code': 1, 'district': 'Cuttack',
                     'industry': 'Dense traffic, old city road network, biomass burning'},
-    'Bhadrak':     {'tier': 'urban',            'tier_code': 1, 'district': 'Bhadrak',
+    'Balasore':    {'tier': 'urban',            'tier_code': 1, 'district': 'Balasore',
                     'industry': 'Port-adjacent industry, light manufacturing'},
-    'Ganjam':      {'tier': 'clean_baseline',   'tier_code': 0, 'district': 'Ganjam',
+    'Berhampur':   {'tier': 'clean_baseline',   'tier_code': 0, 'district': 'Ganjam',
                     'industry': 'Coastal city, sea breeze dispersion, light industry'},
-    'Koraput':     {'tier': 'clean_baseline',   'tier_code': 0, 'district': 'Koraput',
+    'Rayagada':    {'tier': 'clean_baseline',   'tier_code': 0, 'district': 'Rayagada',
                     'industry': 'Hilly terrain, bauxite mining, lower density'},
 }
 
@@ -42,8 +42,8 @@ TIER_COLOURS = {
 }
 
 INDUSTRIAL_CITIES = ['Jharsuguda', 'Angul', 'Talcher', 'Rourkela', 'Sambalpur']
-URBAN_CITIES      = ['Bhubaneswar', 'Cuttack', 'Bhadrak']
-CLEAN_CITIES      = ['Ganjam', 'Koraput']
+URBAN_CITIES      = ['Bhubaneswar', 'Cuttack', 'Balasore']
+CLEAN_CITIES      = ['Berhampur', 'Rayagada']
 CORRIDOR_CITIES   = ['Jharsuguda', 'Angul', 'Talcher']
 
 DIWALI_DATES = ['2019-10-27', '2020-11-14', '2021-11-04', '2022-10-24', '2023-11-12']
