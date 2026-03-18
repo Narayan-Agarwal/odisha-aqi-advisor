@@ -43,6 +43,6 @@ def test_no_duplicate_city_date(clean_df):
 
 def test_date_range_within_bounds(clean_df):
     min_date = pd.Timestamp("2019-01-01")
-    max_date = pd.Timestamp("2023-12-31")
+    max_date = pd.Timestamp.now().normalize()  # today — data extends to current date
     assert clean_df["date"].min() >= min_date, f"Dates before 2019-01-01 found"
-    assert clean_df["date"].max() <= max_date, f"Dates after 2023-12-31 found"
+    assert clean_df["date"].max() <= max_date, f"Dates beyond today found"

@@ -131,7 +131,7 @@ def build_sidebar(df: pd.DataFrame):
         start_date, end_date = default_start, default_end
 
     st.sidebar.markdown("---")
-    st.sidebar.caption(f"Data: CPCB 2019–2023 + WAQI live updates | 10 Odisha cities\n\nRange: {min_date} → {max_date}")
+    st.sidebar.caption(f"Data: CPCB synthetic 2019–present | 10 Odisha cities\n\nRange: {min_date} → {max_date}")
 
     return city, pd.Timestamp(start_date), pd.Timestamp(end_date)
 
