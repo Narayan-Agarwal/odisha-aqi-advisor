@@ -113,22 +113,25 @@ def build_sidebar(df: pd.DataFrame):
     all_cities = sorted(CITIES.keys())
     city = st.sidebar.selectbox("Select City", all_cities)
 
-    # Date range
+    # Dynamic date range — always derived from actual data
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
+    default_start = max(min_date, (df["date"].max() - pd.Timedelta(days=365)).date())
+    default_end = max_date
+
     date_range = st.sidebar.date_input(
         "Date Range",
-        value=(min_date, max_date),
+        value=(default_start, default_end),
         min_value=min_date,
         max_value=max_date,
     )
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
         start_date, end_date = date_range
     else:
-        start_date, end_date = min_date, max_date
+        start_date, end_date = default_start, default_end
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Data: CPCB 2019–2023 | OpenAQ API\n\n10 Odisha cities")
+    st.sidebar.caption(f"Data: CPCB 2019–2023 + WAQI live updates | 10 Odisha cities\n\nRange: {min_date} → {max_date}")
 
     return city, pd.Timestamp(start_date), pd.Timestamp(end_date)
 
@@ -231,6 +234,9 @@ def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
     chart_height = 250 if screen_width < 768 else 380
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
+    if len(filtered) == 0:
+        st.info("No data available for the selected date range. Please adjust the date filter.")
+        st.stop()
 
     # Tier comparison + box plot side by side
     col1, col2 = st.columns(2)
@@ -292,6 +298,9 @@ def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Ti
     )
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
+    if len(filtered) == 0:
+        st.info("No data available for the selected date range. Please adjust the date filter.")
+        st.stop()
 
     # Full-width corridor chart
     fig = plot_industrial_corridor(filtered, height=chart_height)
@@ -331,6 +340,10 @@ def render_model_performance():
     except FileNotFoundError:
         st.error("model_results.csv not found. Run notebook 04 to train models first.")
         return
+
+    if len(results) == 0:
+        st.info("No model results available.")
+        st.stop()
 
     # Rename model_type for display
     display = results.copy()
