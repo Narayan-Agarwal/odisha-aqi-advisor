@@ -2,9 +2,9 @@
 
 Air quality analytics and next-day AQI prediction for 10 Odisha cities across the industrial corridor. Built with XGBoost + Streamlit.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](YOUR_APP_URL)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://odisha-aqi-advisor.streamlit.app/)
 
-**Live App**: YOUR_APP_URL
+**Live App**: (https://odisha-aqi-advisor.streamlit.app/)
 
 ## City Coverage
 
