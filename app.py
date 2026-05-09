@@ -1,5 +1,5 @@
 """
-app.py — Streamlit entry point for the Odisha AQI Advisor V3.
+app.py -- Streamlit entry point for the Odisha AQI Advisor V3.
 Run: streamlit run app.py  (from the odisha-aqi-advisor/ directory)
 """
 import os
@@ -7,9 +7,10 @@ import os
 import numpy as np
 import pandas as pd
 import plotly.figure_factory as ff
+import plotly.graph_objects as go
 import streamlit as st
 
-from src.advisory import get_advisory, aqi_to_category
+from src.advisory import get_advisory
 from src.constants import AQI_BANDS, TIER_LABELS
 from src.data_loader import (
     CITIES, TIER_COLOURS, INDUSTRIAL_CITIES, CORRIDOR_CITIES,
@@ -84,7 +85,7 @@ def _get_screen_width() -> int:
 # Cached loaders
 # ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=300)  # re-read featured.csv every 5 min to pick up auto-updates
+@st.cache_data(ttl=300)
 def get_featured() -> pd.DataFrame:
     return load_featured_csv()
 
@@ -112,7 +113,6 @@ def build_sidebar(df: pd.DataFrame):
     st.sidebar.title("🌫️ Odisha AQI Advisor")
     st.sidebar.markdown("---")
 
-    # Dark mode toggle
     dark_mode = st.sidebar.toggle("🌙 Dark Mode", value=False)
     if dark_mode:
         st.markdown(
@@ -121,11 +121,9 @@ def build_sidebar(df: pd.DataFrame):
             unsafe_allow_html=True,
         )
 
-    # Plain alphabetical city list
     all_cities = sorted(CITIES.keys())
     city = st.sidebar.selectbox("Select City", all_cities)
 
-    # Dynamic date range — always derived from actual data, never hardcoded
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
     default_start = max(min_date, (df["date"].max() - pd.Timedelta(days=365)).date())
@@ -144,8 +142,8 @@ def build_sidebar(df: pd.DataFrame):
 
     st.sidebar.markdown("---")
     st.sidebar.caption(
-        f"Data: CPCB 2019–2023 + WAQI live updates | 10 Odisha cities\n\n"
-        f"📅 Data last updated: {max_date}"
+        f"Data: CPCB 2019-2023 + WAQI live updates | 10 Odisha cities\n\n"
+        f"Data last updated: {max_date}"
     )
 
     return city, pd.Timestamp(start_date), pd.Timestamp(end_date)
@@ -159,15 +157,13 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
     screen_width = _get_screen_width()
     chart_height = 250 if screen_width < 768 else 380
 
-    # Welcome banner
-    st.info("👋 Welcome to the Odisha AQI Advisor — explore air quality forecasts and trends for 10 cities across Odisha.")
+    st.info("Welcome to the Odisha AQI Advisor -- explore air quality forecasts and trends for 10 cities across Odisha.")
 
-    # Load model
     model_type_used = "xgb"
     try:
         model = get_model(city, "xgb")
     except FileNotFoundError:
-        st.warning("XGBoost model not found — falling back to Linear Regression.")
+        st.warning("XGBoost model not found -- falling back to Linear Regression.")
         model_type_used = "lr"
         try:
             model = get_model(city, "lr")
@@ -175,7 +171,6 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
             st.error("No model found for this city. Run notebook 04 first.")
             return
 
-    # Build feature row from latest available data
     city_df = df[df["city"] == city].sort_values("date")
     feat_cols = get_feature_columns()
     latest = city_df.dropna(subset=feat_cols).iloc[-1]
@@ -184,7 +179,6 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
 
     category, message, colour = get_advisory(pred_aqi)
 
-    # Prediction card
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Next-Day AQI Forecast", f"{pred_aqi:.0f}", help=f"Model: {model_type_used.upper()}")
@@ -197,21 +191,19 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
     with col3:
         st.info(message)
 
-    # What is AQI? expander
-    with st.expander("ℹ️ What is AQI?"):
+    with st.expander("What is AQI?"):
         st.markdown(
             "The **Air Quality Index (AQI)** is a number used by government agencies to communicate "
             "how polluted the air currently is or how polluted it is forecast to become. "
-            "It is calculated from concentrations of PM2.5, PM10, SO₂, and NO₂ using the CPCB formula. "
+            "It is calculated from concentrations of PM2.5, PM10, SO2, and NO2 using the CPCB formula. "
             "A lower AQI means cleaner air.\n\n"
             "| Range | Category |\n|---|---|\n"
-            "| 0–50 | Good |\n| 51–100 | Satisfactory |\n| 101–200 | Moderate |\n"
-            "| 201–300 | Poor |\n| 301–400 | Very Poor |\n| 401–500 | Severe |"
+            "| 0-50 | Good |\n| 51-100 | Satisfactory |\n| 101-200 | Moderate |\n"
+            "| 201-300 | Poor |\n| 301-400 | Very Poor |\n| 401-500 | Severe |"
         )
 
     st.markdown("---")
 
-    # Historical AQI + Feature importance side by side
     ncols = layout_columns(screen_width)
     if ncols == 2:
         left, right = st.columns(2)
@@ -222,7 +214,7 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
         granularity = st.radio("Chart granularity", ["Monthly", "Daily"], horizontal=True, key="gran")
         filtered = df[(df["city"] == city) & (df["date"] >= start) & (df["date"] <= end)]
         if len(filtered) == 0:
-            st.info("📅 No data available for this date range. Please select dates within the available range shown in the sidebar.")
+            st.info("No data available for this date range. Please select dates within the available range shown in the sidebar.")
         else:
             fig_hist = plot_historical_aqi(
                 df, city, start, end,
@@ -237,9 +229,9 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
             xgb_model = get_model(city, "xgb")
             fig_fi = plot_feature_importance_city(city, xgb_model, feat_cols, height=chart_height)
             st.plotly_chart(fig_fi, use_container_width=True)
-            st.caption("XGBoost feature importance — which inputs drive the forecast most.")
+            st.caption("XGBoost feature importance -- which inputs drive the forecast most.")
         except FileNotFoundError:
-            st.info("Feature importance unavailable — XGBoost model not found.")
+            st.info("Feature importance unavailable -- XGBoost model not found.")
 
 
 # ---------------------------------------------------------------------------
@@ -247,16 +239,15 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
 # ---------------------------------------------------------------------------
 
 def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp):
-    st.header("🏙️ Compare Cities")
+    st.header("Compare Cities")
     screen_width = _get_screen_width()
     chart_height = 250 if screen_width < 768 else 380
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
     if len(filtered) == 0:
-        st.info("📅 No data available for this date range. Please select dates within the available range shown in the sidebar.")
+        st.info("No data available for this date range. Please select dates within the available range shown in the sidebar.")
         return
 
-    # Tier comparison + box plot side by side
     col1, col2 = st.columns(2)
     with col1:
         fig = plot_tier_comparison(filtered, height=chart_height)
@@ -267,12 +258,10 @@ def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
         st.plotly_chart(fig, use_container_width=True)
         st.caption("AQI distribution across city tiers.")
 
-    # Full-width heatmap
     fig = plot_city_month_heatmap(filtered, height=chart_height)
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Monthly average AQI heatmap — darker = worse air quality.")
+    st.caption("Monthly average AQI heatmap -- darker = worse air quality.")
 
-    # Pollutant dominance + monsoon side by side
     col3, col4 = st.columns(2)
     with col3:
         fig = plot_pollutant_dominance(filtered, height=chart_height)
@@ -281,15 +270,14 @@ def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
     with col4:
         fig = plot_monsoon_dip(filtered, height=chart_height)
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("Seasonal AQI pattern — note the monsoon dip in Jul–Sep.")
+        st.caption("Seasonal AQI pattern -- note the monsoon dip in Jul-Sep.")
 
-    # Full-width feature importance comparison
     try:
         xgb_models = {}
         feat_cols = get_feature_columns()
-        for city in CITIES:
+        for c in CITIES:
             try:
-                xgb_models[city] = get_model(city, "xgb")
+                xgb_models[c] = get_model(c, "xgb")
             except FileNotFoundError:
                 pass
         if xgb_models:
@@ -305,45 +293,43 @@ def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
 # ---------------------------------------------------------------------------
 
 def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp):
-    st.header("🏭 Industrial Corridor")
+    st.header("Industrial Corridor")
     screen_width = _get_screen_width()
     chart_height = 250 if screen_width < 768 else 380
 
     st.markdown(
-        "The western Odisha industrial corridor — Jharsuguda, Angul, and Talcher — hosts "
+        "The western Odisha industrial corridor -- Jharsuguda, Angul, and Talcher -- hosts "
         "some of India's largest aluminium smelters, coal-fired power plants, and coalfields. "
         "This tab explores how industrial activity drives AQI patterns in the region."
     )
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
     if len(filtered) == 0:
-        st.info("📅 No data available for this date range. Please select dates within the available range shown in the sidebar.")
+        st.info("No data available for this date range. Please select dates within the available range shown in the sidebar.")
         return
 
-    # Full-width corridor chart
     fig = plot_industrial_corridor(filtered, height=chart_height)
     st.plotly_chart(fig, use_container_width=True)
     st.caption("Monthly average AQI for the three corridor cities.")
 
-    # Diwali spike + pollutant correlation side by side
     col1, col2 = st.columns(2)
     with col1:
         fig = plot_diwali_spike(filtered, height=chart_height)
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("AQI spikes around Diwali (Oct–Nov) across all cities.")
+        st.caption("AQI spikes around Diwali (Oct-Nov) across all cities.")
     with col2:
         fig = plot_pollutant_correlation(filtered, height=chart_height)
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("Correlation between pollutants — PM2.5 and PM10 tend to move together.")
+        st.caption("Correlation between pollutants -- PM2.5 and PM10 tend to move together.")
 
 
 # ---------------------------------------------------------------------------
-# Tab 4: Model Performance
+# Tab 4: Model Performance  (exactly 2 sections)
 # ---------------------------------------------------------------------------
 
-CATS = ["Good", "Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+BROAD_CATS = ["Low (0-100)", "Moderate (101-200)", "High (201+)"]
 
-SECTION_HEADER = (
+_SECTION_HDR = (
     "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);color:white;"
     "padding:10px 18px;border-radius:8px;font-size:18px;font-weight:600;"
     "margin:24px 0 12px 0;'>{icon} {title}</div>"
@@ -351,11 +337,7 @@ SECTION_HEADER = (
 
 
 def render_model_performance():
-    import plotly.graph_objects as go_local
-
-    st.header("📊 Model Performance")
-    screen_width = _get_screen_width()
-    chart_height = 250 if screen_width < 768 else 380
+    st.header("Model Performance")
 
     try:
         results = get_model_results()
@@ -368,123 +350,26 @@ def render_model_performance():
         return
 
     # -----------------------------------------------------------------------
-    # SECTION 1 — Live Model Accuracy Tracker (TOP)
+    # SECTION 1 -- Model Comparison Table + Bar Chart
     # -----------------------------------------------------------------------
     st.markdown(
-        SECTION_HEADER.format(icon="📈", title="Live Model Accuracy Tracker"),
+        _SECTION_HDR.format(icon="⚖️", title="Model Comparison -- XGBoost vs Linear Regression"),
         unsafe_allow_html=True,
     )
-    st.markdown("Tracks how model accuracy changes over time as new data is added and the model is retrained.")
-
-    hist_path = "data/processed/accuracy_history.csv"
-    if os.path.exists(hist_path):
-        hist_df = pd.read_csv(hist_path)
-        hist_df["date"] = pd.to_datetime(hist_df["date"])
-
-        tracker_city = st.selectbox(
-            "Select city for accuracy tracker",
-            sorted(CITIES.keys()),
-            key="tracker_city",
-        )
-
-        city_hist = hist_df[
-            (hist_df["city"] == tracker_city) & (hist_df["model"] == "xgb")
-        ].sort_values("date").reset_index(drop=True)
-
-        if len(city_hist) >= 1:
-            current_acc  = city_hist.iloc[-1]["category_accuracy"]
-            current_mae  = city_hist.iloc[-1]["mae"]
-            current_r2   = city_hist.iloc[-1]["r2"]
-
-            if len(city_hist) >= 2:
-                prev_acc  = city_hist.iloc[-2]["category_accuracy"]
-                prev_mae  = city_hist.iloc[-2]["mae"]
-                prev_r2   = city_hist.iloc[-2]["r2"]
-                acc_delta = f"{(current_acc - prev_acc)*100:+.1f}% vs previous run"
-                mae_delta = f"{current_mae - prev_mae:+.1f}"
-                r2_delta  = f"{current_r2 - prev_r2:+.3f}"
-            else:
-                acc_delta = "First recorded run"
-                mae_delta = "First run"
-                r2_delta  = "First run"
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric(
-                label=f"Category Accuracy — {tracker_city}",
-                value=f"{current_acc * 100:.1f}%",
-                delta=acc_delta,
-                help="Percentage of test days where model predicted the correct CPCB health category",
-            )
-            col2.metric(
-                label="MAE",
-                value=f"{current_mae:.1f} AQI units",
-                delta=mae_delta if mae_delta == "First run" else mae_delta,
-                delta_color="inverse",
-                help="Average prediction error in AQI units. Lower is better.",
-            )
-            col3.metric(
-                label="R²",
-                value=f"{current_r2:.3f}",
-                delta=r2_delta,
-                help="Proportion of AQI variation explained by the model. Higher is better.",
-            )
-
-        if len(city_hist) >= 2:
-            fig_hist = go_local.Figure()
-            fig_hist.add_trace(go_local.Scatter(
-                x=city_hist["date"],
-                y=city_hist["category_accuracy"] * 100,
-                mode="lines+markers",
-                name="Category Accuracy %",
-                line=dict(color="#2E75B6", width=2),
-                marker=dict(size=8),
-                hovertemplate="Date: %{x|%d %b %Y}<br>Accuracy: %{y:.1f}%<extra></extra>",
-            ))
-            fig_hist.update_layout(
-                title=f"Model Accuracy Over Time — {tracker_city} (XGBoost)",
-                xaxis_title="Date of model run",
-                yaxis_title="Category Accuracy (%)",
-                yaxis=dict(range=[0, 100]),
-                height=350,
-            )
-            st.plotly_chart(fig_hist, use_container_width=True)
-            st.caption("Each point represents one model training run. As more data is added and the model is retrained, accuracy is tracked here automatically.")
-        else:
-            st.info("Retrain the model at least twice to see the accuracy trend chart.")
-    else:
-        st.info("accuracy_history.csv not found. Re-run notebook 04 to generate it.")
-
-    # -----------------------------------------------------------------------
-    # SECTION 2 — Model Comparison Matrix
-    # -----------------------------------------------------------------------
-    st.markdown(
-        SECTION_HEADER.format(icon="⚖️", title="Model Comparison — XGBoost vs Linear Regression"),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "This table compares how accurately each model predicted AQI for every city. "
-        "**Lower MAE and RMSE = more accurate. Higher R² = better fit.** "
-        "XGBoost (orange) is the primary model. Linear Regression (blue) is the baseline. "
-        "Green cells highlight the better-performing model for each metric."
-    )
+    st.markdown("Green highlighted value = better performing model for that city and metric.")
 
     xgb_df = results[results["model_type"] == "xgb"].set_index("city")
     lr_df  = results[results["model_type"] == "lr"].set_index("city")
 
-    has_acc = "category_accuracy" in results.columns
-    compare_data = {
-        "XGBoost MAE":     xgb_df["mae"],
-        "Linear Reg MAE":  lr_df["mae"],
-        "XGBoost RMSE":    xgb_df["rmse"],
-        "Linear Reg RMSE": lr_df["rmse"],
-        "XGBoost R²":      xgb_df["r2"],
-        "Linear Reg R²":   lr_df["r2"],
-    }
-    if has_acc:
-        compare_data["XGBoost Cat. Acc."]    = xgb_df["category_accuracy"]
-        compare_data["Linear Reg Cat. Acc."] = lr_df["category_accuracy"]
-
-    compare_df = pd.DataFrame(compare_data).round(3)
+    compare_df = pd.DataFrame({
+        "City":            xgb_df.index,
+        "XGBoost MAE":     xgb_df["mae"].values.round(1),
+        "Linear Reg MAE":  lr_df["mae"].values.round(1),
+        "XGBoost RMSE":    xgb_df["rmse"].values.round(1),
+        "Linear Reg RMSE": lr_df["rmse"].values.round(1),
+        "XGBoost R2":      xgb_df["r2"].values.round(3),
+        "Linear Reg R2":   lr_df["r2"].values.round(3),
+    }).reset_index(drop=True)
 
     def highlight_better(row):
         styles = [""] * len(row)
@@ -492,143 +377,106 @@ def render_model_performance():
         pairs = [
             ("XGBoost MAE",  "Linear Reg MAE",  "lower"),
             ("XGBoost RMSE", "Linear Reg RMSE", "lower"),
-            ("XGBoost R²",   "Linear Reg R²",   "higher"),
+            ("XGBoost R2",   "Linear Reg R2",   "higher"),
         ]
-        if has_acc:
-            pairs.append(("XGBoost Cat. Acc.", "Linear Reg Cat. Acc.", "higher"))
         for xgb_col, lr_col, better in pairs:
             if xgb_col not in cols or lr_col not in cols:
                 continue
             xi, li = cols.index(xgb_col), cols.index(lr_col)
-            if better == "lower":
-                winner = xi if row[xgb_col] <= row[lr_col] else li
-            else:
-                winner = xi if row[xgb_col] >= row[lr_col] else li
+            winner = xi if (row[xgb_col] <= row[lr_col] if better == "lower" else row[xgb_col] >= row[lr_col]) else li
             styles[winner] = "background-color:#D5F5E3;font-weight:bold"
         return styles
 
     st.dataframe(
         compare_df.style.apply(highlight_better, axis=1),
         use_container_width=True,
+        hide_index=True,
     )
 
-    # Grouped bar chart — MAE comparison
-    cities_list = compare_df.index.tolist()
-    fig_compare = go_local.Figure()
-    fig_compare.add_trace(go_local.Bar(
-        name="XGBoost MAE",
+    cities_list = compare_df["City"].tolist()
+    fig_cmp = go.Figure()
+    fig_cmp.add_trace(go.Bar(
+        name="XGBoost",
         x=cities_list,
         y=compare_df["XGBoost MAE"].tolist(),
         marker_color="#E67E22",
-        text=compare_df["XGBoost MAE"].round(1).tolist(),
+        text=compare_df["XGBoost MAE"].tolist(),
         textposition="outside",
-        hovertemplate="XGBoost<br>City: %{x}<br>MAE: %{y:.1f} AQI units<extra></extra>",
+        hovertemplate="City: %{x}<br>XGBoost MAE: %{y:.1f} AQI units<extra></extra>",
     ))
-    fig_compare.add_trace(go_local.Bar(
-        name="Linear Regression MAE",
+    fig_cmp.add_trace(go.Bar(
+        name="Linear Regression",
         x=cities_list,
         y=compare_df["Linear Reg MAE"].tolist(),
         marker_color="#2E75B6",
-        text=compare_df["Linear Reg MAE"].round(1).tolist(),
+        text=compare_df["Linear Reg MAE"].tolist(),
         textposition="outside",
-        hovertemplate="Linear Regression<br>City: %{x}<br>MAE: %{y:.1f} AQI units<extra></extra>",
+        hovertemplate="City: %{x}<br>Linear Reg MAE: %{y:.1f} AQI units<extra></extra>",
     ))
-    fig_compare.update_layout(
+    fig_cmp.update_layout(
         barmode="group",
-        title="MAE Comparison — XGBoost vs Linear Regression (lower = more accurate)",
+        title="MAE Comparison by City -- lower bar = more accurate model",
         xaxis_title="City",
         yaxis_title="MAE (AQI units)",
         height=420,
         legend=dict(x=0.01, y=0.99),
         hovermode="x unified",
     )
-    st.plotly_chart(fig_compare, use_container_width=True)
-    st.caption("Lower bar = more accurate model. Green highlighted cells in the table above show which model won for each city and metric.")
-
-    # YoY trend
-    try:
-        df_feat = get_featured()
-        fig_yoy = plot_yoy_trend(df_feat, height=chart_height)
-        st.plotly_chart(fig_yoy, use_container_width=True)
-        st.caption("Year-on-year average AQI trend across all cities.")
-    except FileNotFoundError:
-        st.info("featured.csv not found — YoY chart unavailable.")
+    st.plotly_chart(fig_cmp, use_container_width=True)
+    st.caption("MAE = average prediction error in AQI units. Lower = more accurate.")
 
     # -----------------------------------------------------------------------
-    # SECTION 3 — Confusion Matrix (BOTTOM)
+    # SECTION 2 -- Confusion Matrix (3-category)
     # -----------------------------------------------------------------------
     st.markdown(
-        SECTION_HEADER.format(icon="🔲", title="Prediction Confusion Matrix — Category Accuracy"),
+        _SECTION_HDR.format(icon="🔲", title="Prediction Confusion Matrix"),
         unsafe_allow_html=True,
     )
     st.markdown(
-        "A confusion matrix shows how often the model predicted the correct CPCB air quality category. "
-        "Each **row** is the **actual category** on that day. "
-        "Each **column** is the **predicted category** the model gave. "
-        "Numbers on the diagonal (top-left to bottom-right) are correct predictions. "
-        "Numbers off the diagonal are mistakes — for example, the model predicted Moderate "
-        "but the actual category was Poor."
+        "Shows how often the model predicted the correct **broad pollution level**. "
+        "Three categories: **Low** (AQI 0-100), **Moderate** (101-200), **High** (201+). "
+        "Rows = actual level. Columns = predicted. Numbers on the diagonal = correct predictions."
     )
 
-    cm_city = st.selectbox("Select city for confusion matrix", sorted(CITIES.keys()), key="cm_city")
+    cm_city = st.selectbox("Select city", sorted(CITIES.keys()), key="cm_city")
 
     cm_path = f"data/processed/confusion_matrix_{cm_city.lower()}.csv"
     if os.path.exists(cm_path):
         cm_df = pd.read_csv(cm_path, index_col=0)
-        cm_df = cm_df.reindex(index=CATS, columns=CATS, fill_value=0)
+        cm_df = cm_df.reindex(index=BROAD_CATS, columns=BROAD_CATS, fill_value=0)
 
         row_sums = cm_df.sum(axis=1).replace(0, 1)
-        cm_norm = cm_df.div(row_sums, axis=0).round(2)
+        cm_norm  = cm_df.div(row_sums, axis=0).round(2)
 
         fig_cm = ff.create_annotated_heatmap(
             z=cm_norm.values.tolist(),
-            x=CATS,
-            y=CATS,
+            x=BROAD_CATS,
+            y=BROAD_CATS,
             annotation_text=cm_df.values.astype(int).astype(str).tolist(),
             colorscale="Blues",
             showscale=True,
         )
         fig_cm.update_layout(
-            title=f"Confusion Matrix — {cm_city} (actual vs predicted CPCB category)",
+            title=f"Confusion Matrix -- {cm_city}",
             xaxis_title="Predicted Category",
             yaxis_title="Actual Category",
             xaxis=dict(side="bottom"),
-            height=500,
+            height=420,
         )
-        fig_cm.update_xaxes(tickangle=30)
+        fig_cm.update_xaxes(tickangle=15)
         st.plotly_chart(fig_cm, use_container_width=True)
 
-        total   = cm_df.values.sum()
-        correct = sum(cm_df.iloc[i, i] for i in range(len(CATS)))
+        total   = int(cm_df.values.sum())
+        correct = int(sum(cm_df.iloc[i, i] for i in range(len(BROAD_CATS))))
         accuracy = correct / total if total > 0 else 0.0
         st.metric(
-            "Category Prediction Accuracy",
+            "Category Accuracy",
             f"{accuracy * 100:.1f}%",
-            help="Percentage of days where the model predicted the correct CPCB health category",
+            help="Percentage of days the model predicted the correct broad pollution level",
         )
+        st.caption("Rows = actual pollution level. Columns = predicted. Diagonal = correct predictions. Numbers show day counts.")
     else:
-        st.info(f"Confusion matrix not yet generated for {cm_city}. Re-run notebook 04.")
-
-    with st.expander("📖 What do these terms mean?"):
-        st.markdown(
-            "| Term | Meaning |\n|---|---|\n"
-            "| **Diagonal cells (blue)** | Correct predictions — model predicted the right CPCB category |\n"
-            "| **Off-diagonal cells** | Wrong predictions — model predicted a different category than actual |\n"
-            "| **True Positive (TP)** | Model correctly predicted a specific category (diagonal value for that category) |\n"
-            "| **False Positive (FP)** | Model predicted this category but actual was different (column sum minus TP) |\n"
-            "| **False Negative (FN)** | Actual was this category but model predicted something else (row sum minus TP) |\n"
-            "| **Precision** | Of all days the model said were Poor, what fraction actually were Poor |\n"
-            "| **Recall** | Of all actual Poor days, what fraction did the model correctly identify |\n"
-            "| **Misclassification** | Most common error is predicting one category off — e.g. Moderate instead of Poor. "
-            "This is acceptable because adjacent categories have very close AQI values |"
-        )
-        st.markdown(
-            "**Important note:** Minor misclassifications between adjacent categories "
-            "(e.g. Moderate vs Poor) are expected because the AQI boundary is a single "
-            "number (200). A prediction of 198 vs actual 202 is only 4 AQI units apart "
-            "but crosses a category boundary — this appears as an error in the confusion "
-            "matrix even though it is practically very close."
-        )
+        st.info(f"Re-run notebook 04 to generate confusion matrix for {cm_city}.")
 
 
 # ---------------------------------------------------------------------------
@@ -645,10 +493,10 @@ def main():
     city, start, end = build_sidebar(df)
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📍 City Dashboard",
-        "🏙️ Compare Cities",
-        "🏭 Industrial Corridor",
-        "📊 Model Performance",
+        "City Dashboard",
+        "Compare Cities",
+        "Industrial Corridor",
+        "Model Performance",
     ])
 
     with tab1:

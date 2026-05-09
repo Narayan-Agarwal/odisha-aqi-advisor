@@ -1,7 +1,4 @@
-,Good,Satisfactory,Moderate,Poor,Very Poor,Severe
-Good,45,73,0,0,0,0
-Satisfactory,21,308,2,0,0,0
-Moderate,1,76,1,0,0,0
-Poor,0,0,0,0,0,0
-Very Poor,0,0,0,0,0,0
-Severe,0,0,0,0,0,0
+,Low (0-100),Moderate (101-200),High (201+)
+Low (0-100),447,2,0
+Moderate (101-200),77,1,0
+High (201+),0,0,0

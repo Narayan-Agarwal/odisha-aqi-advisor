@@ -55,6 +55,22 @@ def get_advisory(aqi_value: float) -> tuple:
     return ("Severe", AQI_BANDS[-1][3], AQI_BANDS[-1][4])
 
 
+def aqi_to_broad_category(aqi_value) -> str:
+    """Map AQI to 3 broad pollution levels for confusion matrix display.
+
+    Low      = 0–100   (Good + Satisfactory)
+    Moderate = 101–200 (Moderate)
+    High     = 201+    (Poor + Very Poor + Severe)
+    """
+    try:
+        v = float(aqi_value)
+    except (TypeError, ValueError):
+        return "Unknown"
+    if v <= 100:   return "Low (0-100)"
+    elif v <= 200: return "Moderate (101-200)"
+    else:          return "High (201+)"
+
+
 def aqi_to_category(aqi_value) -> str:
     """Map a numeric AQI value to its CPCB health category string.
 
