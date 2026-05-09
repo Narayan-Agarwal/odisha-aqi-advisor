@@ -59,12 +59,13 @@ def aqi_to_category(aqi_value) -> str:
     """Map a numeric AQI value to its CPCB health category string.
 
     Used for confusion matrix generation (regression → classification).
+    Returns one of: Good, Satisfactory, Moderate, Poor, Very Poor, Severe.
     """
     try:
         v = float(aqi_value)
     except (TypeError, ValueError):
         return "Unknown"
-    if v <= 50:   return "Good"
+    if v <= 50:    return "Good"
     elif v <= 100: return "Satisfactory"
     elif v <= 200: return "Moderate"
     elif v <= 300: return "Poor"
