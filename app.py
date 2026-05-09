@@ -3,13 +3,13 @@ app.py — Streamlit entry point for the Odisha AQI Advisor V3.
 Run: streamlit run app.py  (from the odisha-aqi-advisor/ directory)
 """
 import os
-from datetime import date
 
 import numpy as np
 import pandas as pd
+import plotly.figure_factory as ff
 import streamlit as st
 
-from src.advisory import get_advisory
+from src.advisory import get_advisory, aqi_to_category
 from src.constants import AQI_BANDS, TIER_LABELS
 from src.data_loader import (
     CITIES, TIER_COLOURS, INDUSTRIAL_CITIES, CORRIDOR_CITIES,
@@ -55,6 +55,18 @@ st.components.v1.html(
     height=0,
 )
 
+# ---------------------------------------------------------------------------
+# Auto-update: fetch latest WAQI data once per session
+# ---------------------------------------------------------------------------
+if "data_updated" not in st.session_state:
+    try:
+        from src.auto_updater import run_auto_update
+        with st.spinner("Fetching latest air quality data..."):
+            run_auto_update()
+    except Exception:
+        pass  # Never crash the app if WAQI is unreachable
+    st.session_state["data_updated"] = True
+
 
 def layout_columns(screen_width: int) -> int:
     """Returns 1 if screen_width < 768, else 2."""
@@ -72,7 +84,7 @@ def _get_screen_width() -> int:
 # Cached loaders
 # ---------------------------------------------------------------------------
 
-@st.cache_data
+@st.cache_data(ttl=300)  # re-read featured.csv every 5 min to pick up auto-updates
 def get_featured() -> pd.DataFrame:
     return load_featured_csv()
 
@@ -113,7 +125,7 @@ def build_sidebar(df: pd.DataFrame):
     all_cities = sorted(CITIES.keys())
     city = st.sidebar.selectbox("Select City", all_cities)
 
-    # Dynamic date range — always derived from actual data
+    # Dynamic date range — always derived from actual data, never hardcoded
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
     default_start = max(min_date, (df["date"].max() - pd.Timedelta(days=365)).date())
@@ -131,7 +143,10 @@ def build_sidebar(df: pd.DataFrame):
         start_date, end_date = default_start, default_end
 
     st.sidebar.markdown("---")
-    st.sidebar.caption(f"Data: CPCB synthetic 2019–present | 10 Odisha cities\n\nRange: {min_date} → {max_date}")
+    st.sidebar.caption(
+        f"Data: CPCB 2019–2023 + WAQI live updates | 10 Odisha cities\n\n"
+        f"📅 Data last updated: {max_date}"
+    )
 
     return city, pd.Timestamp(start_date), pd.Timestamp(end_date)
 
@@ -174,7 +189,6 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
     with col1:
         st.metric("Next-Day AQI Forecast", f"{pred_aqi:.0f}", help=f"Model: {model_type_used.upper()}")
     with col2:
-        # Fixed-width badge so width doesn't shift between categories
         st.markdown(
             f"<div style='background:{colour};padding:12px;border-radius:8px;"
             f"color:white;font-weight:bold;text-align:center;min-width:160px'>{category}</div>",
@@ -206,13 +220,17 @@ def render_city_dashboard(df: pd.DataFrame, city: str, start: pd.Timestamp, end:
 
     with left:
         granularity = st.radio("Chart granularity", ["Monthly", "Daily"], horizontal=True, key="gran")
-        fig_hist = plot_historical_aqi(
-            df, city, start, end,
-            granularity=granularity.lower(),
-            height=chart_height,
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
-        st.caption(f"Historical AQI for {city} from {start.date()} to {end.date()}.")
+        filtered = df[(df["city"] == city) & (df["date"] >= start) & (df["date"] <= end)]
+        if len(filtered) == 0:
+            st.info("📅 No data available for this date range. Please select dates within the available range shown in the sidebar.")
+        else:
+            fig_hist = plot_historical_aqi(
+                df, city, start, end,
+                granularity=granularity.lower(),
+                height=chart_height,
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+            st.caption(f"Historical AQI for {city} from {start.date()} to {end.date()}.")
 
     with right:
         try:
@@ -235,8 +253,8 @@ def render_compare_cities(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
     if len(filtered) == 0:
-        st.info("No data available for the selected date range. Please adjust the date filter.")
-        st.stop()
+        st.info("📅 No data available for this date range. Please select dates within the available range shown in the sidebar.")
+        return
 
     # Tier comparison + box plot side by side
     col1, col2 = st.columns(2)
@@ -299,8 +317,8 @@ def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Ti
 
     filtered = df[(df["date"] >= start) & (df["date"] <= end)]
     if len(filtered) == 0:
-        st.info("No data available for the selected date range. Please adjust the date filter.")
-        st.stop()
+        st.info("📅 No data available for this date range. Please select dates within the available range shown in the sidebar.")
+        return
 
     # Full-width corridor chart
     fig = plot_industrial_corridor(filtered, height=chart_height)
@@ -323,6 +341,9 @@ def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Ti
 # Tab 4: Model Performance
 # ---------------------------------------------------------------------------
 
+CATS = ["Good", "Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+
+
 def render_model_performance():
     st.header("📊 Model Performance")
     screen_width = _get_screen_width()
@@ -343,15 +364,13 @@ def render_model_performance():
 
     if len(results) == 0:
         st.info("No model results available.")
-        st.stop()
+        return
 
     # Rename model_type for display
     display = results.copy()
     display["model_type"] = display["model_type"].map({"lr": "Linear Regression", "xgb": "XGBoost"})
-    st.dataframe(
-        display[["city", "model_type", "rmse", "mae", "r2"]].round(3),
-        use_container_width=True,
-    )
+    cols_to_show = [c for c in ["city", "model_type", "rmse", "mae", "r2", "category_accuracy"] if c in display.columns]
+    st.dataframe(display[cols_to_show].round(3), use_container_width=True)
 
     # MAE comparison + YoY trend side by side
     col1, col2 = st.columns(2)
@@ -367,6 +386,88 @@ def render_model_performance():
             st.caption("Year-on-year average AQI trend across all cities.")
         except FileNotFoundError:
             st.info("featured.csv not found — YoY chart unavailable.")
+
+    # -----------------------------------------------------------------------
+    # Confusion Matrix section
+    # -----------------------------------------------------------------------
+    st.markdown(
+        "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);color:white;"
+        "padding:10px 18px;border-radius:8px;font-size:18px;font-weight:600;"
+        "margin:24px 0 12px 0;'>🔲 Prediction Confusion Matrix — Category Accuracy</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        "A confusion matrix shows how often the model predicted the correct CPCB air quality category. "
+        "Each **row** is the **actual category** on that day. "
+        "Each **column** is the **predicted category** the model gave. "
+        "Numbers on the diagonal (top-left to bottom-right) are correct predictions. "
+        "Numbers off the diagonal are mistakes — for example, the model predicted Moderate "
+        "but the actual category was Poor."
+    )
+
+    cm_city = st.selectbox("Select city for confusion matrix", sorted(CITIES.keys()), key="cm_city")
+
+    cm_path = f"data/processed/confusion_matrix_{cm_city.lower()}.csv"
+    if os.path.exists(cm_path):
+        cm_df = pd.read_csv(cm_path, index_col=0)
+        cm_df = cm_df.reindex(index=CATS, columns=CATS, fill_value=0)
+
+        # Normalise rows for colour scale; show raw counts as annotations
+        row_sums = cm_df.sum(axis=1).replace(0, 1)
+        cm_norm = cm_df.div(row_sums, axis=0).round(2)
+
+        fig_cm = ff.create_annotated_heatmap(
+            z=cm_norm.values.tolist(),
+            x=CATS,
+            y=CATS,
+            annotation_text=cm_df.values.astype(int).astype(str).tolist(),
+            colorscale="Blues",
+            showscale=True,
+        )
+        fig_cm.update_layout(
+            title=f"Confusion Matrix — {cm_city} (actual vs predicted CPCB category)",
+            xaxis_title="Predicted Category",
+            yaxis_title="Actual Category",
+            xaxis=dict(side="bottom"),
+            height=500,
+        )
+        fig_cm.update_xaxes(tickangle=30)
+        st.plotly_chart(fig_cm, use_container_width=True)
+
+        # Category accuracy metric
+        total = cm_df.values.sum()
+        correct = sum(cm_df.iloc[i, i] for i in range(len(CATS)))
+        accuracy = correct / total if total > 0 else 0.0
+        st.metric(
+            "Category Prediction Accuracy",
+            f"{accuracy * 100:.1f}%",
+            help="Percentage of days where the model predicted the correct CPCB health category",
+        )
+    else:
+        st.info(f"Confusion matrix not yet generated for {cm_city}. Re-run notebook 04.")
+
+    # Terminology expander
+    with st.expander("📖 What do these terms mean?"):
+        st.markdown(
+            "| Term | Meaning |\n|---|---|\n"
+            "| **Diagonal cells (blue)** | Correct predictions — model predicted the right CPCB category |\n"
+            "| **Off-diagonal cells** | Wrong predictions — model predicted a different category than actual |\n"
+            "| **True Positive (TP)** | Model correctly predicted a specific category (diagonal value for that category) |\n"
+            "| **False Positive (FP)** | Model predicted this category but actual was different (column sum minus TP) |\n"
+            "| **False Negative (FN)** | Actual was this category but model predicted something else (row sum minus TP) |\n"
+            "| **Precision** | Of all days the model said were Poor, what fraction actually were Poor |\n"
+            "| **Recall** | Of all actual Poor days, what fraction did the model correctly identify |\n"
+            "| **Misclassification** | Most common error is predicting one category off — e.g. Moderate instead of Poor. "
+            "This is acceptable because adjacent categories have very close AQI values |"
+        )
+        st.markdown(
+            "**Important note:** Minor misclassifications between adjacent categories "
+            "(e.g. Moderate vs Poor) are expected because the AQI boundary is a single "
+            "number (200). A prediction of 198 vs actual 202 is only 4 AQI units apart "
+            "but crosses a category boundary — this appears as an error in the confusion "
+            "matrix even though it is practically very close."
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,17 @@
+=== WAQI fetch run: 2026-03-18T19:42:49.878098 ===
+Existing rows: 18241, max date: 2026-03-18
+WAQI rows fetched: 1
+  Talcher: AQI=61.0 on 2026-03-18
+All fetched rows already exist in featured.csv — nothing to append.=== Auto-update run: 2026-05-10 00:56:03 ===
+SKIP  Angul: WAQI returned no data
+ADD   Talcher: 2026-05-10 â€” AQI 141.0
+SKIP  Rourkela: WAQI returned no data
+SKIP  Sambalpur: WAQI returned no data
+SKIP  Jharsuguda: WAQI returned no data
+SKIP  Bhubaneswar: WAQI returned no data
+SKIP  Cuttack: WAQI returned no data
+SKIP  Balasore: WAQI returned no data
+SKIP  Berhampur: WAQI returned no data
+SKIP  Rayagada: WAQI returned no data
+SAVED 1 new rows to featured.csv
+

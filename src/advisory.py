@@ -53,3 +53,20 @@ def get_advisory(aqi_value: float) -> tuple:
 
     # Fallback — should never be reached for valid non-negative input
     return ("Severe", AQI_BANDS[-1][3], AQI_BANDS[-1][4])
+
+
+def aqi_to_category(aqi_value) -> str:
+    """Map a numeric AQI value to its CPCB health category string.
+
+    Used for confusion matrix generation (regression → classification).
+    """
+    try:
+        v = float(aqi_value)
+    except (TypeError, ValueError):
+        return "Unknown"
+    if v <= 50:   return "Good"
+    elif v <= 100: return "Satisfactory"
+    elif v <= 200: return "Moderate"
+    elif v <= 300: return "Poor"
+    elif v <= 400: return "Very Poor"
+    else:          return "Severe"
