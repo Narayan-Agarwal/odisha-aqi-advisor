@@ -70,7 +70,7 @@ def plot_tier_comparison(df: pd.DataFrame, height: int = DEFAULT_HEIGHT) -> go.F
 def plot_city_month_heatmap(df: pd.DataFrame, height: int = DEFAULT_HEIGHT) -> go.Figure:
     month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
     pivot = df.groupby(["city", df["date"].dt.month])["aqi"].mean().unstack()
-    pivot.columns = month_names
+    pivot = pivot.rename(columns=dict(zip(pivot.columns, month_names)))
 
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
@@ -95,7 +95,7 @@ def plot_city_month_heatmap(df: pd.DataFrame, height: int = DEFAULT_HEIGHT) -> g
 def plot_monsoon_dip(df: pd.DataFrame, height: int = DEFAULT_HEIGHT) -> go.Figure:
     month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
     monthly = df.groupby(["city", df["date"].dt.month])["aqi"].mean().reset_index()
-    monthly.columns = ["city", "month", "aqi"]
+    monthly = monthly.rename(columns={monthly.columns[0]: "city", monthly.columns[1]: "month", monthly.columns[2]: "aqi"})
 
     fig = go.Figure()
     for city in sorted(df["city"].unique()):
@@ -125,7 +125,7 @@ def plot_monsoon_dip(df: pd.DataFrame, height: int = DEFAULT_HEIGHT) -> go.Figur
 # ---------------------------------------------------------------------------
 def plot_yoy_trend(df: pd.DataFrame, height: int = DEFAULT_HEIGHT) -> go.Figure:
     yearly = df.groupby(["city", df["date"].dt.year])["aqi"].mean().reset_index()
-    yearly.columns = ["city", "year", "aqi"]
+    yearly = yearly.rename(columns={yearly.columns[0]: "city", yearly.columns[1]: "year", yearly.columns[2]: "aqi"})
 
     fig = go.Figure()
     for city in sorted(df["city"].unique()):
@@ -410,7 +410,7 @@ def plot_historical_aqi(
 
     if granularity == "monthly":
         monthly = city_df.set_index("date")["aqi"].resample("ME").mean().reset_index()
-        monthly.columns = ["date", "aqi"]
+        monthly = monthly.rename(columns={monthly.columns[0]: "date", monthly.columns[1]: "aqi"})
         rolling = monthly["aqi"].rolling(3, min_periods=1).mean()
         fig.add_trace(go.Bar(
             x=monthly["date"], y=monthly["aqi"],
