@@ -343,18 +343,19 @@ def render_industrial_corridor(df: pd.DataFrame, start: pd.Timestamp, end: pd.Ti
 
 CATS = ["Good", "Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
 
+SECTION_HEADER = (
+    "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);color:white;"
+    "padding:10px 18px;border-radius:8px;font-size:18px;font-weight:600;"
+    "margin:24px 0 12px 0;'>{icon} {title}</div>"
+)
+
 
 def render_model_performance():
+    import plotly.graph_objects as go_local
+
     st.header("📊 Model Performance")
     screen_width = _get_screen_width()
     chart_height = 250 if screen_width < 768 else 380
-
-    st.markdown(
-        "Two models are trained per city: **Linear Regression** (fast, interpretable baseline) "
-        "and **XGBoost** (gradient-boosted trees, typically more accurate). "
-        "MAE (Mean Absolute Error) measures average prediction error in AQI units — lower is better. "
-        "R² measures how much variance the model explains — closer to 1.0 is better."
-    )
 
     try:
         results = get_model_results()
@@ -366,37 +367,200 @@ def render_model_performance():
         st.info("No model results available.")
         return
 
-    # Rename model_type for display
-    display = results.copy()
-    display["model_type"] = display["model_type"].map({"lr": "Linear Regression", "xgb": "XGBoost"})
-    cols_to_show = [c for c in ["city", "model_type", "rmse", "mae", "r2", "category_accuracy"] if c in display.columns]
-    st.dataframe(display[cols_to_show].round(3), use_container_width=True)
-
-    # MAE comparison + YoY trend side by side
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = plot_model_comparison(results, height=chart_height)
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("MAE comparison between Linear Regression and XGBoost per city.")
-    with col2:
-        try:
-            df = get_featured()
-            fig = plot_yoy_trend(df, height=chart_height)
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption("Year-on-year average AQI trend across all cities.")
-        except FileNotFoundError:
-            st.info("featured.csv not found — YoY chart unavailable.")
-
     # -----------------------------------------------------------------------
-    # Confusion Matrix section
+    # SECTION 1 — Live Model Accuracy Tracker (TOP)
     # -----------------------------------------------------------------------
     st.markdown(
-        "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);color:white;"
-        "padding:10px 18px;border-radius:8px;font-size:18px;font-weight:600;"
-        "margin:24px 0 12px 0;'>🔲 Prediction Confusion Matrix — Category Accuracy</div>",
+        SECTION_HEADER.format(icon="📈", title="Live Model Accuracy Tracker"),
         unsafe_allow_html=True,
     )
+    st.markdown("Tracks how model accuracy changes over time as new data is added and the model is retrained.")
 
+    hist_path = "data/processed/accuracy_history.csv"
+    if os.path.exists(hist_path):
+        hist_df = pd.read_csv(hist_path)
+        hist_df["date"] = pd.to_datetime(hist_df["date"])
+
+        tracker_city = st.selectbox(
+            "Select city for accuracy tracker",
+            sorted(CITIES.keys()),
+            key="tracker_city",
+        )
+
+        city_hist = hist_df[
+            (hist_df["city"] == tracker_city) & (hist_df["model"] == "xgb")
+        ].sort_values("date").reset_index(drop=True)
+
+        if len(city_hist) >= 1:
+            current_acc  = city_hist.iloc[-1]["category_accuracy"]
+            current_mae  = city_hist.iloc[-1]["mae"]
+            current_r2   = city_hist.iloc[-1]["r2"]
+
+            if len(city_hist) >= 2:
+                prev_acc  = city_hist.iloc[-2]["category_accuracy"]
+                prev_mae  = city_hist.iloc[-2]["mae"]
+                prev_r2   = city_hist.iloc[-2]["r2"]
+                acc_delta = f"{(current_acc - prev_acc)*100:+.1f}% vs previous run"
+                mae_delta = f"{current_mae - prev_mae:+.1f}"
+                r2_delta  = f"{current_r2 - prev_r2:+.3f}"
+            else:
+                acc_delta = "First recorded run"
+                mae_delta = "First run"
+                r2_delta  = "First run"
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric(
+                label=f"Category Accuracy — {tracker_city}",
+                value=f"{current_acc * 100:.1f}%",
+                delta=acc_delta,
+                help="Percentage of test days where model predicted the correct CPCB health category",
+            )
+            col2.metric(
+                label="MAE",
+                value=f"{current_mae:.1f} AQI units",
+                delta=mae_delta if mae_delta == "First run" else mae_delta,
+                delta_color="inverse",
+                help="Average prediction error in AQI units. Lower is better.",
+            )
+            col3.metric(
+                label="R²",
+                value=f"{current_r2:.3f}",
+                delta=r2_delta,
+                help="Proportion of AQI variation explained by the model. Higher is better.",
+            )
+
+        if len(city_hist) >= 2:
+            fig_hist = go_local.Figure()
+            fig_hist.add_trace(go_local.Scatter(
+                x=city_hist["date"],
+                y=city_hist["category_accuracy"] * 100,
+                mode="lines+markers",
+                name="Category Accuracy %",
+                line=dict(color="#2E75B6", width=2),
+                marker=dict(size=8),
+                hovertemplate="Date: %{x|%d %b %Y}<br>Accuracy: %{y:.1f}%<extra></extra>",
+            ))
+            fig_hist.update_layout(
+                title=f"Model Accuracy Over Time — {tracker_city} (XGBoost)",
+                xaxis_title="Date of model run",
+                yaxis_title="Category Accuracy (%)",
+                yaxis=dict(range=[0, 100]),
+                height=350,
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+            st.caption("Each point represents one model training run. As more data is added and the model is retrained, accuracy is tracked here automatically.")
+        else:
+            st.info("Retrain the model at least twice to see the accuracy trend chart.")
+    else:
+        st.info("accuracy_history.csv not found. Re-run notebook 04 to generate it.")
+
+    # -----------------------------------------------------------------------
+    # SECTION 2 — Model Comparison Matrix
+    # -----------------------------------------------------------------------
+    st.markdown(
+        SECTION_HEADER.format(icon="⚖️", title="Model Comparison — XGBoost vs Linear Regression"),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "This table compares how accurately each model predicted AQI for every city. "
+        "**Lower MAE and RMSE = more accurate. Higher R² = better fit.** "
+        "XGBoost (orange) is the primary model. Linear Regression (blue) is the baseline. "
+        "Green cells highlight the better-performing model for each metric."
+    )
+
+    xgb_df = results[results["model_type"] == "xgb"].set_index("city")
+    lr_df  = results[results["model_type"] == "lr"].set_index("city")
+
+    has_acc = "category_accuracy" in results.columns
+    compare_data = {
+        "XGBoost MAE":     xgb_df["mae"],
+        "Linear Reg MAE":  lr_df["mae"],
+        "XGBoost RMSE":    xgb_df["rmse"],
+        "Linear Reg RMSE": lr_df["rmse"],
+        "XGBoost R²":      xgb_df["r2"],
+        "Linear Reg R²":   lr_df["r2"],
+    }
+    if has_acc:
+        compare_data["XGBoost Cat. Acc."]    = xgb_df["category_accuracy"]
+        compare_data["Linear Reg Cat. Acc."] = lr_df["category_accuracy"]
+
+    compare_df = pd.DataFrame(compare_data).round(3)
+
+    def highlight_better(row):
+        styles = [""] * len(row)
+        cols = list(row.index)
+        pairs = [
+            ("XGBoost MAE",  "Linear Reg MAE",  "lower"),
+            ("XGBoost RMSE", "Linear Reg RMSE", "lower"),
+            ("XGBoost R²",   "Linear Reg R²",   "higher"),
+        ]
+        if has_acc:
+            pairs.append(("XGBoost Cat. Acc.", "Linear Reg Cat. Acc.", "higher"))
+        for xgb_col, lr_col, better in pairs:
+            if xgb_col not in cols or lr_col not in cols:
+                continue
+            xi, li = cols.index(xgb_col), cols.index(lr_col)
+            if better == "lower":
+                winner = xi if row[xgb_col] <= row[lr_col] else li
+            else:
+                winner = xi if row[xgb_col] >= row[lr_col] else li
+            styles[winner] = "background-color:#D5F5E3;font-weight:bold"
+        return styles
+
+    st.dataframe(
+        compare_df.style.apply(highlight_better, axis=1),
+        use_container_width=True,
+    )
+
+    # Grouped bar chart — MAE comparison
+    cities_list = compare_df.index.tolist()
+    fig_compare = go_local.Figure()
+    fig_compare.add_trace(go_local.Bar(
+        name="XGBoost MAE",
+        x=cities_list,
+        y=compare_df["XGBoost MAE"].tolist(),
+        marker_color="#E67E22",
+        text=compare_df["XGBoost MAE"].round(1).tolist(),
+        textposition="outside",
+        hovertemplate="XGBoost<br>City: %{x}<br>MAE: %{y:.1f} AQI units<extra></extra>",
+    ))
+    fig_compare.add_trace(go_local.Bar(
+        name="Linear Regression MAE",
+        x=cities_list,
+        y=compare_df["Linear Reg MAE"].tolist(),
+        marker_color="#2E75B6",
+        text=compare_df["Linear Reg MAE"].round(1).tolist(),
+        textposition="outside",
+        hovertemplate="Linear Regression<br>City: %{x}<br>MAE: %{y:.1f} AQI units<extra></extra>",
+    ))
+    fig_compare.update_layout(
+        barmode="group",
+        title="MAE Comparison — XGBoost vs Linear Regression (lower = more accurate)",
+        xaxis_title="City",
+        yaxis_title="MAE (AQI units)",
+        height=420,
+        legend=dict(x=0.01, y=0.99),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig_compare, use_container_width=True)
+    st.caption("Lower bar = more accurate model. Green highlighted cells in the table above show which model won for each city and metric.")
+
+    # YoY trend
+    try:
+        df_feat = get_featured()
+        fig_yoy = plot_yoy_trend(df_feat, height=chart_height)
+        st.plotly_chart(fig_yoy, use_container_width=True)
+        st.caption("Year-on-year average AQI trend across all cities.")
+    except FileNotFoundError:
+        st.info("featured.csv not found — YoY chart unavailable.")
+
+    # -----------------------------------------------------------------------
+    # SECTION 3 — Confusion Matrix (BOTTOM)
+    # -----------------------------------------------------------------------
+    st.markdown(
+        SECTION_HEADER.format(icon="🔲", title="Prediction Confusion Matrix — Category Accuracy"),
+        unsafe_allow_html=True,
+    )
     st.markdown(
         "A confusion matrix shows how often the model predicted the correct CPCB air quality category. "
         "Each **row** is the **actual category** on that day. "
@@ -413,7 +577,6 @@ def render_model_performance():
         cm_df = pd.read_csv(cm_path, index_col=0)
         cm_df = cm_df.reindex(index=CATS, columns=CATS, fill_value=0)
 
-        # Normalise rows for colour scale; show raw counts as annotations
         row_sums = cm_df.sum(axis=1).replace(0, 1)
         cm_norm = cm_df.div(row_sums, axis=0).round(2)
 
@@ -435,8 +598,7 @@ def render_model_performance():
         fig_cm.update_xaxes(tickangle=30)
         st.plotly_chart(fig_cm, use_container_width=True)
 
-        # Category accuracy metric
-        total = cm_df.values.sum()
+        total   = cm_df.values.sum()
         correct = sum(cm_df.iloc[i, i] for i in range(len(CATS)))
         accuracy = correct / total if total > 0 else 0.0
         st.metric(
@@ -447,7 +609,6 @@ def render_model_performance():
     else:
         st.info(f"Confusion matrix not yet generated for {cm_city}. Re-run notebook 04.")
 
-    # Terminology expander
     with st.expander("📖 What do these terms mean?"):
         st.markdown(
             "| Term | Meaning |\n|---|---|\n"
