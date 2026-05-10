@@ -339,81 +339,87 @@ _SECTION_HDR = (
 def render_model_performance():
     st.header("Model Performance")
 
-    try:
-        results = get_model_results()
-    except FileNotFoundError:
+    if not os.path.exists("data/processed/model_results.csv"):
         st.error("model_results.csv not found. Run notebook 04 to train models first.")
         return
 
+    results = pd.read_csv("data/processed/model_results.csv")
     if len(results) == 0:
         st.info("No model results available.")
         return
 
-    xgb_results = results[results["model_type"] == "xgb"]
-    lr_results  = results[results["model_type"] == "lr"]
-    xgb_avg_r2      = xgb_results["r2"].mean()
-    xgb_avg_mae     = xgb_results["mae"].mean()
-    xgb_avg_rmse    = xgb_results["rmse"].mean()
-    lr_avg_r2       = lr_results["r2"].mean()
-    lr_avg_mae      = lr_results["mae"].mean()
-    has_cat_acc     = "category_accuracy" in xgb_results.columns
-    xgb_avg_cat_acc = xgb_results["category_accuracy"].mean() if has_cat_acc else 0.0
+    xgb = results[results["model_type"] == "xgb"]
+    lr  = results[results["model_type"] == "lr"]
+
+    xgb_r2   = xgb["r2"].mean()
+    xgb_mae  = xgb["mae"].mean()
+    xgb_rmse = xgb["rmse"].mean()
+    lr_r2    = lr["r2"].mean()
+    lr_mae   = lr["mae"].mean()
+    xgb_cat_acc = xgb["category_accuracy"].mean() if "category_accuracy" in xgb.columns else None
 
     # -----------------------------------------------------------------------
-    # SECTION 0 -- Overall Model Accuracy (only shown when R2 >= 0.75)
+    # SECTION 1 -- Overall Model Accuracy
     # -----------------------------------------------------------------------
-    if xgb_avg_r2 >= 0.75:
+    if xgb_r2 >= 0.75:
         st.markdown(
-            _SECTION_HDR.format(icon="🎯", title="Overall Model Accuracy"),
+            "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);"
+            "color:white;padding:10px 18px;border-radius:8px;"
+            "font-size:18px;font-weight:600;margin:24px 0 12px 0;'>"
+            "🎯 Overall Model Accuracy</div>",
             unsafe_allow_html=True,
         )
-
         col1, col2, col3, col4 = st.columns(4)
         col1.metric(
-            label="XGBoost R2 Score",
-            value=f"{xgb_avg_r2:.2f}",
-            delta=f"{(xgb_avg_r2 - lr_avg_r2):+.2f} vs Linear Reg",
-            help="Average R2 across all 10 cities. Closer to 1.0 = better.",
+            "XGBoost R2 Score",
+            f"{xgb_r2:.2f}",
+            f"{xgb_r2 - lr_r2:+.2f} vs Linear Reg",
+            help="Average R2 across all cities. Closer to 1.0 = better.",
         )
         col2.metric(
-            label="Category Accuracy",
-            value=f"{xgb_avg_cat_acc * 100:.1f}%" if has_cat_acc else "N/A",
-            help="Average % of days where model predicted correct broad pollution level (Low/Moderate/High)",
+            "Category Accuracy",
+            f"{xgb_cat_acc * 100:.1f}%" if xgb_cat_acc is not None else "N/A",
+            help="% of days model predicted correct broad pollution level",
         )
         col3.metric(
-            label="Average MAE",
-            value=f"{xgb_avg_mae:.1f} AQI units",
-            delta=f"{(lr_avg_mae - xgb_avg_mae):+.1f} vs Linear Reg",
+            "Average MAE",
+            f"{xgb_mae:.1f} AQI units",
+            f"{lr_mae - xgb_mae:+.1f} vs Linear Reg",
             delta_color="inverse",
-            help="Average prediction error in AQI units across all cities. Lower is better.",
+            help="Average prediction error. Lower is better.",
         )
         col4.metric(
-            label="Average RMSE",
-            value=f"{xgb_avg_rmse:.1f} AQI units",
-            help="Root mean squared error -- penalises large spike prediction errors.",
+            "Average RMSE",
+            f"{xgb_rmse:.1f} AQI units",
+            help="Penalises large spike errors. Lower is better.",
         )
-        st.caption("Metrics averaged across all 10 Odisha cities. XGBoost vs Linear Regression baseline.")
+        st.caption("Averaged across all 10 Odisha cities. XGBoost vs Linear Regression baseline.")
+    else:
+        st.info("Model is being updated. Performance metrics will appear shortly.")
 
     # -----------------------------------------------------------------------
-    # SECTION 1 -- Model Comparison Table + Bar Chart
+    # SECTION 2 -- Model Comparison Table + MAE Bar Chart
     # -----------------------------------------------------------------------
     st.markdown(
-        _SECTION_HDR.format(icon="⚖️", title="Model Comparison -- XGBoost vs Linear Regression"),
+        "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);"
+        "color:white;padding:10px 18px;border-radius:8px;"
+        "font-size:18px;font-weight:600;margin:24px 0 12px 0;'>"
+        "⚖️ Model Comparison -- XGBoost vs Linear Regression</div>",
         unsafe_allow_html=True,
     )
-    st.markdown("Green highlighted value = better performing model for that city and metric.")
+    st.markdown("Green = better performing model for that city and metric.")
 
-    xgb_df = results[results["model_type"] == "xgb"].set_index("city")
-    lr_df  = results[results["model_type"] == "lr"].set_index("city")
+    xgb_idx = xgb.set_index("city")
+    lr_idx  = lr.set_index("city")
 
     compare_df = pd.DataFrame({
-        "City":            xgb_df.index,
-        "XGBoost MAE":     xgb_df["mae"].values.round(1),
-        "Linear Reg MAE":  lr_df["mae"].values.round(1),
-        "XGBoost RMSE":    xgb_df["rmse"].values.round(1),
-        "Linear Reg RMSE": lr_df["rmse"].values.round(1),
-        "XGBoost R2":      xgb_df["r2"].values.round(3),
-        "Linear Reg R2":   lr_df["r2"].values.round(3),
+        "City":            xgb_idx.index,
+        "XGBoost MAE":     xgb_idx["mae"].round(1).values,
+        "Linear Reg MAE":  lr_idx["mae"].round(1).values,
+        "XGBoost RMSE":    xgb_idx["rmse"].round(1).values,
+        "Linear Reg RMSE": lr_idx["rmse"].round(1).values,
+        "XGBoost R2":      xgb_idx["r2"].round(3).values,
+        "Linear Reg R2":   lr_idx["r2"].round(3).values,
     }).reset_index(drop=True)
 
     def highlight_better(row):
@@ -424,11 +430,11 @@ def render_model_performance():
             ("XGBoost RMSE", "Linear Reg RMSE", "lower"),
             ("XGBoost R2",   "Linear Reg R2",   "higher"),
         ]
-        for xgb_col, lr_col, better in pairs:
-            if xgb_col not in cols or lr_col not in cols:
+        for xc, lc, direction in pairs:
+            if xc not in cols or lc not in cols:
                 continue
-            xi, li = cols.index(xgb_col), cols.index(lr_col)
-            winner = xi if (row[xgb_col] <= row[lr_col] if better == "lower" else row[xgb_col] >= row[lr_col]) else li
+            xi, li = cols.index(xc), cols.index(lc)
+            winner = xi if (row[xc] <= row[lc] if direction == "lower" else row[xc] >= row[lc]) else li
             styles[winner] = "background-color:#D5F5E3;font-weight:bold"
         return styles
 
@@ -438,29 +444,28 @@ def render_model_performance():
         hide_index=True,
     )
 
-    cities_list = compare_df["City"].tolist()
     fig_cmp = go.Figure()
     fig_cmp.add_trace(go.Bar(
         name="XGBoost",
-        x=cities_list,
+        x=compare_df["City"].tolist(),
         y=compare_df["XGBoost MAE"].tolist(),
         marker_color="#E67E22",
         text=compare_df["XGBoost MAE"].tolist(),
         textposition="outside",
-        hovertemplate="City: %{x}<br>XGBoost MAE: %{y:.1f} AQI units<extra></extra>",
+        hovertemplate="City: %{x}<br>XGBoost MAE: %{y:.1f}<extra></extra>",
     ))
     fig_cmp.add_trace(go.Bar(
         name="Linear Regression",
-        x=cities_list,
+        x=compare_df["City"].tolist(),
         y=compare_df["Linear Reg MAE"].tolist(),
         marker_color="#2E75B6",
         text=compare_df["Linear Reg MAE"].tolist(),
         textposition="outside",
-        hovertemplate="City: %{x}<br>Linear Reg MAE: %{y:.1f} AQI units<extra></extra>",
+        hovertemplate="City: %{x}<br>Linear Reg MAE: %{y:.1f}<extra></extra>",
     ))
     fig_cmp.update_layout(
         barmode="group",
-        title="MAE Comparison by City -- lower bar = more accurate model",
+        title="MAE Comparison -- lower = more accurate",
         xaxis_title="City",
         yaxis_title="MAE (AQI units)",
         height=420,
@@ -468,23 +473,23 @@ def render_model_performance():
         hovermode="x unified",
     )
     st.plotly_chart(fig_cmp, use_container_width=True)
-    st.caption("MAE = average prediction error in AQI units. Lower = more accurate.")
+    st.caption("Lower bar = more accurate. Green cells show which model won per city.")
 
     # -----------------------------------------------------------------------
-    # SECTION 2 -- City-wise Confusion Matrix
+    # SECTION 3 -- City-wise Confusion Matrix
     # -----------------------------------------------------------------------
     st.markdown(
-        _SECTION_HDR.format(icon="🔲", title="City-wise Confusion Matrix"),
+        "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);"
+        "color:white;padding:10px 18px;border-radius:8px;"
+        "font-size:18px;font-weight:600;margin:24px 0 12px 0;'>"
+        "🔲 City-wise Confusion Matrix</div>",
         unsafe_allow_html=True,
     )
-    st.markdown(
-        "Shows how often the model predicted the correct **broad pollution level**. "
-        "Three categories: **Low** (AQI 0-100), **Moderate** (101-200), **High** (201+). "
-        "Rows = actual level. Columns = predicted. Numbers on the diagonal = correct predictions."
-    )
+
+    BROAD = ["Low (0-100)", "Moderate (101-200)", "High (201+)"]
 
     cm_city = st.selectbox(
-        "Select city to view confusion matrix",
+        "Select city",
         sorted(list(CITIES.keys())),
         key="cm_city_select",
     )
@@ -492,25 +497,24 @@ def render_model_performance():
     cm_path = f"data/processed/confusion_matrix_{cm_city.lower().replace(' ', '_')}.csv"
     if os.path.exists(cm_path):
         cm_df = pd.read_csv(cm_path, index_col=0)
-        cm_df = cm_df.reindex(index=BROAD_CATS, columns=BROAD_CATS, fill_value=0)
+        cm_df = cm_df.reindex(index=BROAD, columns=BROAD, fill_value=0)
 
-        total_correct = int(sum(cm_df.values[i][i] for i in range(len(BROAD_CATS))))
-        total = int(cm_df.values.sum())
-        accuracy = (total_correct / total * 100) if total > 0 else 0.0
+        total_correct = int(sum(cm_df.values[i][i] for i in range(3)))
+        total         = int(cm_df.values.sum())
+        accuracy      = (total_correct / total * 100) if total > 0 else 0.0
 
         st.metric(
-            label=f"Category Accuracy -- {cm_city}",
-            value=f"{accuracy:.1f}%",
-            help="% of test days where model predicted correct broad pollution level",
+            f"Category Accuracy -- {cm_city}",
+            f"{accuracy:.1f}%",
+            help="% of test days with correct broad pollution level predicted",
         )
 
-        row_sums = cm_df.sum(axis=1).replace(0, 1)
-        cm_norm  = cm_df.div(row_sums, axis=0).round(2)
+        cm_norm = cm_df.div(cm_df.sum(axis=1).replace(0, 1), axis=0).round(2)
 
         fig_cm = ff.create_annotated_heatmap(
             z=cm_norm.values.tolist(),
-            x=BROAD_CATS,
-            y=BROAD_CATS,
+            x=BROAD,
+            y=BROAD,
             annotation_text=cm_df.values.astype(int).astype(str).tolist(),
             colorscale="Blues",
             showscale=True,
@@ -520,13 +524,13 @@ def render_model_performance():
             xaxis_title="Predicted Category",
             yaxis_title="Actual Category",
             xaxis=dict(side="bottom"),
-            height=420,
+            height=400,
         )
         fig_cm.update_xaxes(tickangle=15)
         st.plotly_chart(fig_cm, use_container_width=True)
-        st.caption("Rows = actual pollution level. Columns = predicted. Diagonal = correct. Numbers = day counts.")
+        st.caption("Rows = actual. Columns = predicted. Diagonal = correct predictions. Numbers = day counts.")
     else:
-        st.warning(f"Confusion matrix file not found for {cm_city}. Re-run notebook 04.")
+        st.warning(f"Run notebook 04 to generate confusion matrix for {cm_city}.")
 
 
 # ---------------------------------------------------------------------------
