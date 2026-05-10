@@ -13,17 +13,19 @@ from src.data_loader import CITIES, INDUSTRIAL_CITIES
 FEATURE_COLS = [
     "aqi_yesterday",
     "aqi_7day_avg",
-    "aqi_30day_avg",
+    "aqi_3day_avg",
     "aqi_momentum",
+    "aqi_3day_change",
     "pm25_lag1",
+    "pm25_lag1_sq",
     "pm10_lag1",
     "so2_lag1",
     "no2_lag1",
     "month",
     "is_winter",
     "is_monsoon",
-    "is_pre_monsoon",
     "is_industrial_peak",
+    "winter_industrial",
 ]
 
 TARGET_COL = "aqi_target"
@@ -32,7 +34,7 @@ TARGET_COL = "aqi_target"
 def add_lag_features(df: pd.DataFrame, city_col: str = "city") -> pd.DataFrame:
     """Add lag-1 features per city group (sorted by date).
 
-    Adds: aqi_yesterday, pm25_lag1, pm10_lag1, so2_lag1, no2_lag1
+    Adds: aqi_yesterday, pm25_lag1, pm25_lag1_sq, pm10_lag1, so2_lag1, no2_lag1
     All computed within city groups to prevent cross-city contamination.
     """
     df = df.copy()
@@ -43,6 +45,8 @@ def add_lag_features(df: pd.DataFrame, city_col: str = "city") -> pd.DataFrame:
     df["pm10_lag1"]     = df.groupby(city_col)["pm10"].shift(1)
     df["so2_lag1"]      = df.groupby(city_col)["so2"].shift(1)
     df["no2_lag1"]      = df.groupby(city_col)["no2"].shift(1)
+    # Non-linear: PM2.5 squared captures exponential health impact at high concentrations
+    df["pm25_lag1_sq"]  = df["pm25_lag1"] ** 2
     return df
 
 
@@ -50,9 +54,11 @@ def add_rolling_features(df: pd.DataFrame, city_col: str = "city") -> pd.DataFra
     """Add rolling mean features per city group.
 
     Adds:
-    - aqi_7day_avg:  7-day rolling mean (shifted by 1 to avoid leakage)
-    - aqi_30day_avg: 30-day rolling mean (shifted by 1, min 7 periods)
-    - aqi_momentum:  aqi_yesterday minus aqi_7day_avg (rising/falling indicator)
+    - aqi_7day_avg:   7-day rolling mean (shifted by 1 to avoid leakage)
+    - aqi_30day_avg:  30-day rolling mean (shifted by 1, min 7 periods)
+    - aqi_3day_avg:   3-day rolling mean (shifted by 1)
+    - aqi_momentum:   aqi_yesterday minus aqi_7day_avg (rising/falling indicator)
+    - aqi_3day_change: aqi_yesterday minus aqi_3day_avg (short-term rate of change)
     """
     df = df.copy()
     df = df.sort_values([city_col, "date"]).reset_index(drop=True)
@@ -63,8 +69,12 @@ def add_rolling_features(df: pd.DataFrame, city_col: str = "city") -> pd.DataFra
     df["aqi_30day_avg"] = df.groupby(city_col)["aqi"].transform(
         lambda x: x.shift(1).rolling(30, min_periods=7).mean()
     )
+    df["aqi_3day_avg"] = df.groupby(city_col)["aqi"].transform(
+        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
+    )
     # Momentum: positive = AQI rising above recent average, negative = falling
-    df["aqi_momentum"] = df["aqi_yesterday"] - df["aqi_7day_avg"]
+    df["aqi_momentum"]    = df["aqi_yesterday"] - df["aqi_7day_avg"]
+    df["aqi_3day_change"] = df["aqi_yesterday"] - df["aqi_3day_avg"]
     return df
 
 
@@ -77,26 +87,24 @@ def add_target(df: pd.DataFrame, city_col: str = "city") -> pd.DataFrame:
 
 
 def add_seasonal_flags(df: pd.DataFrame) -> pd.DataFrame:
-    """Add month, is_winter, is_monsoon, is_pre_monsoon flags.
-
-    is_winter:     1 if month in {11, 12, 1}
-    is_monsoon:    1 if month in {7, 8, 9}
-    is_pre_monsoon: 1 if month in {4, 5}  (rising temps + dust before monsoon)
-    """
+    """Add month, is_winter, is_monsoon flags."""
     df = df.copy()
-    df["month"]          = df["date"].dt.month.astype(int)
-    df["is_winter"]      = df["month"].isin([11, 12, 1]).astype(int)
-    df["is_monsoon"]     = df["month"].isin([7, 8, 9]).astype(int)
-    df["is_pre_monsoon"] = df["month"].isin([4, 5]).astype(int)
+    df["month"]      = df["date"].dt.month.astype(int)
+    df["is_winter"]  = df["month"].isin([11, 12, 1]).astype(int)
+    df["is_monsoon"] = df["month"].isin([7, 8, 9]).astype(int)
     return df
 
 
 def add_industrial_peak_flag(df: pd.DataFrame) -> pd.DataFrame:
-    """Add is_industrial_peak: 1 if city in INDUSTRIAL_CITIES and month in {10,11,12,1,2}."""
+    """Add is_industrial_peak and winter_industrial interaction feature."""
     df = df.copy()
     peak_months = {10, 11, 12, 1, 2}
     df["is_industrial_peak"] = (
         df["city"].isin(INDUSTRIAL_CITIES) & df["date"].dt.month.isin(peak_months)
+    ).astype(int)
+    # Non-linear interaction: industrial cities in winter are disproportionately worse
+    df["winter_industrial"] = (
+        df["city"].isin(INDUSTRIAL_CITIES) & df["date"].dt.month.isin({11, 12, 1})
     ).astype(int)
     return df
 
