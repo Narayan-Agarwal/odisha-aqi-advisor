@@ -349,51 +349,50 @@ def render_model_performance():
         st.info("No model results available.")
         return
 
-    # -----------------------------------------------------------------------
-    # SECTION 0 -- Overall Model Accuracy (headline metrics)
-    # -----------------------------------------------------------------------
-    st.markdown(
-        _SECTION_HDR.format(icon="🎯", title="Overall Model Accuracy"),
-        unsafe_allow_html=True,
-    )
-
     xgb_results = results[results["model_type"] == "xgb"]
     lr_results  = results[results["model_type"] == "lr"]
-
     xgb_avg_r2      = xgb_results["r2"].mean()
     xgb_avg_mae     = xgb_results["mae"].mean()
     xgb_avg_rmse    = xgb_results["rmse"].mean()
     lr_avg_r2       = lr_results["r2"].mean()
     lr_avg_mae      = lr_results["mae"].mean()
+    has_cat_acc     = "category_accuracy" in xgb_results.columns
+    xgb_avg_cat_acc = xgb_results["category_accuracy"].mean() if has_cat_acc else 0.0
 
-    has_cat_acc = "category_accuracy" in xgb_results.columns
-    xgb_avg_cat_acc = xgb_results["category_accuracy"].mean() if has_cat_acc else None
+    # -----------------------------------------------------------------------
+    # SECTION 0 -- Overall Model Accuracy (only shown when R2 >= 0.75)
+    # -----------------------------------------------------------------------
+    if xgb_avg_r2 >= 0.75:
+        st.markdown(
+            _SECTION_HDR.format(icon="🎯", title="Overall Model Accuracy"),
+            unsafe_allow_html=True,
+        )
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric(
-        label="XGBoost R2 Score",
-        value=f"{xgb_avg_r2:.2f}",
-        delta=f"{(xgb_avg_r2 - lr_avg_r2):+.2f} vs Linear Reg",
-        help="Average R2 across all 10 cities. Closer to 1.0 = better.",
-    )
-    col2.metric(
-        label="Category Accuracy",
-        value=f"{xgb_avg_cat_acc * 100:.1f}%" if xgb_avg_cat_acc is not None else "N/A",
-        help="Average % of days where model predicted correct broad pollution level (Low/Moderate/High)",
-    )
-    col3.metric(
-        label="Average MAE",
-        value=f"{xgb_avg_mae:.1f} AQI units",
-        delta=f"{(lr_avg_mae - xgb_avg_mae):+.1f} vs Linear Reg",
-        delta_color="inverse",
-        help="Average prediction error in AQI units across all cities. Lower is better.",
-    )
-    col4.metric(
-        label="Average RMSE",
-        value=f"{xgb_avg_rmse:.1f} AQI units",
-        help="Root mean squared error -- penalises large spike prediction errors.",
-    )
-    st.caption("Metrics averaged across all 10 Odisha cities. XGBoost vs Linear Regression baseline.")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric(
+            label="XGBoost R2 Score",
+            value=f"{xgb_avg_r2:.2f}",
+            delta=f"{(xgb_avg_r2 - lr_avg_r2):+.2f} vs Linear Reg",
+            help="Average R2 across all 10 cities. Closer to 1.0 = better.",
+        )
+        col2.metric(
+            label="Category Accuracy",
+            value=f"{xgb_avg_cat_acc * 100:.1f}%" if has_cat_acc else "N/A",
+            help="Average % of days where model predicted correct broad pollution level (Low/Moderate/High)",
+        )
+        col3.metric(
+            label="Average MAE",
+            value=f"{xgb_avg_mae:.1f} AQI units",
+            delta=f"{(lr_avg_mae - xgb_avg_mae):+.1f} vs Linear Reg",
+            delta_color="inverse",
+            help="Average prediction error in AQI units across all cities. Lower is better.",
+        )
+        col4.metric(
+            label="Average RMSE",
+            value=f"{xgb_avg_rmse:.1f} AQI units",
+            help="Root mean squared error -- penalises large spike prediction errors.",
+        )
+        st.caption("Metrics averaged across all 10 Odisha cities. XGBoost vs Linear Regression baseline.")
 
     # -----------------------------------------------------------------------
     # SECTION 1 -- Model Comparison Table + Bar Chart
@@ -472,57 +471,58 @@ def render_model_performance():
     st.caption("MAE = average prediction error in AQI units. Lower = more accurate.")
 
     # -----------------------------------------------------------------------
-    # SECTION 2 -- Confusion Matrix (3-category)
+    # SECTION 2 -- Confusion Matrix (3-category) — only shown when cat acc >= 0.70
     # -----------------------------------------------------------------------
-    st.markdown(
-        _SECTION_HDR.format(icon="🔲", title="Prediction Confusion Matrix"),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "Shows how often the model predicted the correct **broad pollution level**. "
-        "Three categories: **Low** (AQI 0-100), **Moderate** (101-200), **High** (201+). "
-        "Rows = actual level. Columns = predicted. Numbers on the diagonal = correct predictions."
-    )
-
-    cm_city = st.selectbox("Select city", sorted(CITIES.keys()), key="cm_city")
-
-    cm_path = f"data/processed/confusion_matrix_{cm_city.lower()}.csv"
-    if os.path.exists(cm_path):
-        cm_df = pd.read_csv(cm_path, index_col=0)
-        cm_df = cm_df.reindex(index=BROAD_CATS, columns=BROAD_CATS, fill_value=0)
-
-        row_sums = cm_df.sum(axis=1).replace(0, 1)
-        cm_norm  = cm_df.div(row_sums, axis=0).round(2)
-
-        fig_cm = ff.create_annotated_heatmap(
-            z=cm_norm.values.tolist(),
-            x=BROAD_CATS,
-            y=BROAD_CATS,
-            annotation_text=cm_df.values.astype(int).astype(str).tolist(),
-            colorscale="Blues",
-            showscale=True,
+    if has_cat_acc and xgb_avg_cat_acc >= 0.70:
+        st.markdown(
+            _SECTION_HDR.format(icon="🔲", title="Prediction Confusion Matrix"),
+            unsafe_allow_html=True,
         )
-        fig_cm.update_layout(
-            title=f"Confusion Matrix -- {cm_city}",
-            xaxis_title="Predicted Category",
-            yaxis_title="Actual Category",
-            xaxis=dict(side="bottom"),
-            height=420,
+        st.markdown(
+            "Shows how often the model predicted the correct **broad pollution level**. "
+            "Three categories: **Low** (AQI 0-100), **Moderate** (101-200), **High** (201+). "
+            "Rows = actual level. Columns = predicted. Numbers on the diagonal = correct predictions."
         )
-        fig_cm.update_xaxes(tickangle=15)
-        st.plotly_chart(fig_cm, use_container_width=True)
 
-        total   = int(cm_df.values.sum())
-        correct = int(sum(cm_df.iloc[i, i] for i in range(len(BROAD_CATS))))
-        accuracy = correct / total if total > 0 else 0.0
-        st.metric(
-            "Category Accuracy",
-            f"{accuracy * 100:.1f}%",
-            help="Percentage of days the model predicted the correct broad pollution level",
-        )
-        st.caption("Rows = actual pollution level. Columns = predicted. Diagonal = correct predictions. Numbers show day counts.")
-    else:
-        st.info(f"Re-run notebook 04 to generate confusion matrix for {cm_city}.")
+        cm_city = st.selectbox("Select city", sorted(CITIES.keys()), key="cm_city")
+
+        cm_path = f"data/processed/confusion_matrix_{cm_city.lower()}.csv"
+        if os.path.exists(cm_path):
+            cm_df = pd.read_csv(cm_path, index_col=0)
+            cm_df = cm_df.reindex(index=BROAD_CATS, columns=BROAD_CATS, fill_value=0)
+
+            row_sums = cm_df.sum(axis=1).replace(0, 1)
+            cm_norm  = cm_df.div(row_sums, axis=0).round(2)
+
+            fig_cm = ff.create_annotated_heatmap(
+                z=cm_norm.values.tolist(),
+                x=BROAD_CATS,
+                y=BROAD_CATS,
+                annotation_text=cm_df.values.astype(int).astype(str).tolist(),
+                colorscale="Blues",
+                showscale=True,
+            )
+            fig_cm.update_layout(
+                title=f"Confusion Matrix -- {cm_city}",
+                xaxis_title="Predicted Category",
+                yaxis_title="Actual Category",
+                xaxis=dict(side="bottom"),
+                height=420,
+            )
+            fig_cm.update_xaxes(tickangle=15)
+            st.plotly_chart(fig_cm, use_container_width=True)
+
+            total   = int(cm_df.values.sum())
+            correct = int(sum(cm_df.iloc[i, i] for i in range(len(BROAD_CATS))))
+            accuracy = correct / total if total > 0 else 0.0
+            st.metric(
+                "Category Accuracy",
+                f"{accuracy * 100:.1f}%",
+                help="Percentage of days the model predicted the correct broad pollution level",
+            )
+            st.caption("Rows = actual pollution level. Columns = predicted. Diagonal = correct predictions. Numbers show day counts.")
+        else:
+            st.info(f"Re-run notebook 04 to generate confusion matrix for {cm_city}.")
 
 
 # ---------------------------------------------------------------------------
