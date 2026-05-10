@@ -471,58 +471,62 @@ def render_model_performance():
     st.caption("MAE = average prediction error in AQI units. Lower = more accurate.")
 
     # -----------------------------------------------------------------------
-    # SECTION 2 -- Confusion Matrix (3-category) — only shown when cat acc >= 0.70
+    # SECTION 2 -- City-wise Confusion Matrix
     # -----------------------------------------------------------------------
-    if has_cat_acc and xgb_avg_cat_acc >= 0.70:
-        st.markdown(
-            _SECTION_HDR.format(icon="🔲", title="Prediction Confusion Matrix"),
-            unsafe_allow_html=True,
+    st.markdown(
+        _SECTION_HDR.format(icon="🔲", title="City-wise Confusion Matrix"),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "Shows how often the model predicted the correct **broad pollution level**. "
+        "Three categories: **Low** (AQI 0-100), **Moderate** (101-200), **High** (201+). "
+        "Rows = actual level. Columns = predicted. Numbers on the diagonal = correct predictions."
+    )
+
+    cm_city = st.selectbox(
+        "Select city to view confusion matrix",
+        sorted(list(CITIES.keys())),
+        key="cm_city_select",
+    )
+
+    cm_path = f"data/processed/confusion_matrix_{cm_city.lower().replace(' ', '_')}.csv"
+    if os.path.exists(cm_path):
+        cm_df = pd.read_csv(cm_path, index_col=0)
+        cm_df = cm_df.reindex(index=BROAD_CATS, columns=BROAD_CATS, fill_value=0)
+
+        total_correct = int(sum(cm_df.values[i][i] for i in range(len(BROAD_CATS))))
+        total = int(cm_df.values.sum())
+        accuracy = (total_correct / total * 100) if total > 0 else 0.0
+
+        st.metric(
+            label=f"Category Accuracy -- {cm_city}",
+            value=f"{accuracy:.1f}%",
+            help="% of test days where model predicted correct broad pollution level",
         )
-        st.markdown(
-            "Shows how often the model predicted the correct **broad pollution level**. "
-            "Three categories: **Low** (AQI 0-100), **Moderate** (101-200), **High** (201+). "
-            "Rows = actual level. Columns = predicted. Numbers on the diagonal = correct predictions."
+
+        row_sums = cm_df.sum(axis=1).replace(0, 1)
+        cm_norm  = cm_df.div(row_sums, axis=0).round(2)
+
+        fig_cm = ff.create_annotated_heatmap(
+            z=cm_norm.values.tolist(),
+            x=BROAD_CATS,
+            y=BROAD_CATS,
+            annotation_text=cm_df.values.astype(int).astype(str).tolist(),
+            colorscale="Blues",
+            showscale=True,
         )
-
-        cm_city = st.selectbox("Select city", sorted(CITIES.keys()), key="cm_city")
-
-        cm_path = f"data/processed/confusion_matrix_{cm_city.lower()}.csv"
-        if os.path.exists(cm_path):
-            cm_df = pd.read_csv(cm_path, index_col=0)
-            cm_df = cm_df.reindex(index=BROAD_CATS, columns=BROAD_CATS, fill_value=0)
-
-            row_sums = cm_df.sum(axis=1).replace(0, 1)
-            cm_norm  = cm_df.div(row_sums, axis=0).round(2)
-
-            fig_cm = ff.create_annotated_heatmap(
-                z=cm_norm.values.tolist(),
-                x=BROAD_CATS,
-                y=BROAD_CATS,
-                annotation_text=cm_df.values.astype(int).astype(str).tolist(),
-                colorscale="Blues",
-                showscale=True,
-            )
-            fig_cm.update_layout(
-                title=f"Confusion Matrix -- {cm_city}",
-                xaxis_title="Predicted Category",
-                yaxis_title="Actual Category",
-                xaxis=dict(side="bottom"),
-                height=420,
-            )
-            fig_cm.update_xaxes(tickangle=15)
-            st.plotly_chart(fig_cm, use_container_width=True)
-
-            total   = int(cm_df.values.sum())
-            correct = int(sum(cm_df.iloc[i, i] for i in range(len(BROAD_CATS))))
-            accuracy = correct / total if total > 0 else 0.0
-            st.metric(
-                "Category Accuracy",
-                f"{accuracy * 100:.1f}%",
-                help="Percentage of days the model predicted the correct broad pollution level",
-            )
-            st.caption("Rows = actual pollution level. Columns = predicted. Diagonal = correct predictions. Numbers show day counts.")
-        else:
-            st.info(f"Re-run notebook 04 to generate confusion matrix for {cm_city}.")
+        fig_cm.update_layout(
+            title=f"Confusion Matrix -- {cm_city} | Accuracy: {accuracy:.1f}%",
+            xaxis_title="Predicted Category",
+            yaxis_title="Actual Category",
+            xaxis=dict(side="bottom"),
+            height=420,
+        )
+        fig_cm.update_xaxes(tickangle=15)
+        st.plotly_chart(fig_cm, use_container_width=True)
+        st.caption("Rows = actual pollution level. Columns = predicted. Diagonal = correct. Numbers = day counts.")
+    else:
+        st.warning(f"Confusion matrix file not found for {cm_city}. Re-run notebook 04.")
 
 
 # ---------------------------------------------------------------------------
