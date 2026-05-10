@@ -44,7 +44,7 @@ TIER_COLOURS = {
 INDUSTRIAL_CITIES = ['Jharsuguda', 'Angul', 'Talcher', 'Rourkela', 'Sambalpur']
 URBAN_CITIES      = ['Bhubaneswar', 'Cuttack', 'Balasore']
 CLEAN_CITIES      = ['Berhampur', 'Rayagada']
-CORRIDOR_CITIES   = ['Jharsuguda', 'Angul', 'Talcher']
+CORRIDOR_CITIES   = ['Angul', 'Talcher', 'Rourkela']
 
 DIWALI_DATES = ['2019-10-27', '2020-11-14', '2021-11-04', '2022-10-24', '2023-11-12']
 

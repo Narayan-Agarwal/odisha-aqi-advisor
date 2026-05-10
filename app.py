@@ -126,19 +126,17 @@ def build_sidebar(df: pd.DataFrame):
 
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
-    default_start = max(min_date, (df["date"].max() - pd.Timedelta(days=365)).date())
-    default_end = max_date
 
     date_range = st.sidebar.date_input(
         "Date Range",
-        value=(default_start, default_end),
+        value=(min_date, max_date),
         min_value=min_date,
         max_value=max_date,
     )
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
         start_date, end_date = date_range
     else:
-        start_date, end_date = default_start, default_end
+        start_date, end_date = min_date, max_date
 
     st.sidebar.markdown("---")
     st.sidebar.caption(
