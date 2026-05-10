@@ -350,6 +350,52 @@ def render_model_performance():
         return
 
     # -----------------------------------------------------------------------
+    # SECTION 0 -- Overall Model Accuracy (headline metrics)
+    # -----------------------------------------------------------------------
+    st.markdown(
+        _SECTION_HDR.format(icon="🎯", title="Overall Model Accuracy"),
+        unsafe_allow_html=True,
+    )
+
+    xgb_results = results[results["model_type"] == "xgb"]
+    lr_results  = results[results["model_type"] == "lr"]
+
+    xgb_avg_r2      = xgb_results["r2"].mean()
+    xgb_avg_mae     = xgb_results["mae"].mean()
+    xgb_avg_rmse    = xgb_results["rmse"].mean()
+    lr_avg_r2       = lr_results["r2"].mean()
+    lr_avg_mae      = lr_results["mae"].mean()
+
+    has_cat_acc = "category_accuracy" in xgb_results.columns
+    xgb_avg_cat_acc = xgb_results["category_accuracy"].mean() if has_cat_acc else None
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        label="XGBoost R2 Score",
+        value=f"{xgb_avg_r2:.2f}",
+        delta=f"{(xgb_avg_r2 - lr_avg_r2):+.2f} vs Linear Reg",
+        help="Average R2 across all 10 cities. Closer to 1.0 = better.",
+    )
+    col2.metric(
+        label="Category Accuracy",
+        value=f"{xgb_avg_cat_acc * 100:.1f}%" if xgb_avg_cat_acc is not None else "N/A",
+        help="Average % of days where model predicted correct broad pollution level (Low/Moderate/High)",
+    )
+    col3.metric(
+        label="Average MAE",
+        value=f"{xgb_avg_mae:.1f} AQI units",
+        delta=f"{(lr_avg_mae - xgb_avg_mae):+.1f} vs Linear Reg",
+        delta_color="inverse",
+        help="Average prediction error in AQI units across all cities. Lower is better.",
+    )
+    col4.metric(
+        label="Average RMSE",
+        value=f"{xgb_avg_rmse:.1f} AQI units",
+        help="Root mean squared error -- penalises large spike prediction errors.",
+    )
+    st.caption("Metrics averaged across all 10 Odisha cities. XGBoost vs Linear Regression baseline.")
+
+    # -----------------------------------------------------------------------
     # SECTION 1 -- Model Comparison Table + Bar Chart
     # -----------------------------------------------------------------------
     st.markdown(
