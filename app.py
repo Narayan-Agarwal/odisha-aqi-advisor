@@ -402,65 +402,76 @@ def render_model_performance():
         "<div style='background:linear-gradient(90deg,#1F3864,#2E75B6);"
         "color:white;padding:10px 18px;border-radius:8px;"
         "font-size:18px;font-weight:600;margin:24px 0 12px 0;'>"
-        "⚖️ Table 1: Model Comparison -- XGBoost vs Linear Regression</div>",
+        "⚖️ Model Comparison -- XGBoost vs Linear Regression</div>",
         unsafe_allow_html=True,
     )
-    st.markdown("Green cell = better performing model for that city and metric. Values rounded to 3 decimal places.")
+    st.markdown("Green = better performing model for that city and metric.")
 
     xgb_idx = xgb.set_index("city")
     lr_idx  = lr.set_index("city")
-    cities_sorted = sorted(xgb_idx.index.tolist())
 
     compare_df = pd.DataFrame({
-        "City":            cities_sorted,
-        "XGBoost R2":      [round(xgb_idx.loc[c, "r2"],   3) for c in cities_sorted],
-        "Linear Reg R2":   [round(lr_idx.loc[c,  "r2"],   3) for c in cities_sorted],
-        "XGBoost MAE":     [round(xgb_idx.loc[c, "mae"],  1) for c in cities_sorted],
-        "Linear Reg MAE":  [round(lr_idx.loc[c,  "mae"],  1) for c in cities_sorted],
-        "XGBoost RMSE":    [round(xgb_idx.loc[c, "rmse"], 1) for c in cities_sorted],
-        "Linear Reg RMSE": [round(lr_idx.loc[c,  "rmse"], 1) for c in cities_sorted],
-    })
-
-    avg_row = {
-        "City":            "Average",
-        "XGBoost R2":      round(xgb["r2"].mean(),   3),
-        "Linear Reg R2":   round(lr["r2"].mean(),    3),
-        "XGBoost MAE":     round(xgb["mae"].mean(),  1),
-        "Linear Reg MAE":  round(lr["mae"].mean(),   1),
-        "XGBoost RMSE":    round(xgb["rmse"].mean(), 1),
-        "Linear Reg RMSE": round(lr["rmse"].mean(),  1),
-    }
-    compare_df = pd.concat([compare_df, pd.DataFrame([avg_row])], ignore_index=True)
+        "City":            xgb_idx.index,
+        "XGBoost MAE":     xgb_idx["mae"].round(1).values,
+        "Linear Reg MAE":  lr_idx["mae"].round(1).values,
+        "XGBoost RMSE":    xgb_idx["rmse"].round(1).values,
+        "Linear Reg RMSE": lr_idx["rmse"].round(1).values,
+        "XGBoost R2":      xgb_idx["r2"].round(3).values,
+        "Linear Reg R2":   lr_idx["r2"].round(3).values,
+    }).reset_index(drop=True)
 
     def highlight_better(row):
         styles = [""] * len(row)
         cols = list(row.index)
-        GREEN = "background-color:#D5F5E3;font-weight:bold"
         pairs = [
-            ("XGBoost R2",   "Linear Reg R2",   "higher"),
             ("XGBoost MAE",  "Linear Reg MAE",  "lower"),
             ("XGBoost RMSE", "Linear Reg RMSE", "lower"),
+            ("XGBoost R2",   "Linear Reg R2",   "higher"),
         ]
         for xc, lc, direction in pairs:
             if xc not in cols or lc not in cols:
                 continue
             xi, li = cols.index(xc), cols.index(lc)
-            winner = xi if (row[xc] >= row[lc] if direction == "higher" else row[xc] <= row[lc]) else li
-            styles[winner] = GREEN
+            winner = xi if (row[xc] <= row[lc] if direction == "lower" else row[xc] >= row[lc]) else li
+            styles[winner] = "background-color:#D5F5E3;font-weight:bold"
         return styles
 
-    styled = (
-        compare_df.style
-        .apply(highlight_better, axis=1)
-        .set_properties(**{"text-align": "center"})
-        .set_properties(subset=["City"], **{"text-align": "left", "font-weight": "bold"})
+    st.dataframe(
+        compare_df.style.apply(highlight_better, axis=1),
+        use_container_width=True,
+        hide_index=True,
     )
-    st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
-    st.caption(
-        "Table 1: Model evaluation metrics on chronological 20% test set per city. "
-        "Lower MAE and RMSE = more accurate. Higher R2 = better fit. "
-        "Average row shows metrics across all cities."
+
+    fig_cmp = go.Figure()
+    fig_cmp.add_trace(go.Bar(
+        name="XGBoost",
+        x=compare_df["City"].tolist(),
+        y=compare_df["XGBoost MAE"].tolist(),
+        marker_color="#E67E22",
+        text=compare_df["XGBoost MAE"].tolist(),
+        textposition="outside",
+        hovertemplate="City: %{x}<br>XGBoost MAE: %{y:.1f}<extra></extra>",
+    ))
+    fig_cmp.add_trace(go.Bar(
+        name="Linear Regression",
+        x=compare_df["City"].tolist(),
+        y=compare_df["Linear Reg MAE"].tolist(),
+        marker_color="#2E75B6",
+        text=compare_df["Linear Reg MAE"].tolist(),
+        textposition="outside",
+        hovertemplate="City: %{x}<br>Linear Reg MAE: %{y:.1f}<extra></extra>",
+    ))
+    fig_cmp.update_layout(
+        barmode="group",
+        title="MAE Comparison -- lower = more accurate",
+        xaxis_title="City",
+        yaxis_title="MAE (AQI units)",
+        height=420,
+        legend=dict(x=0.01, y=0.99),
+        hovermode="x unified",
     )
+    st.plotly_chart(fig_cmp, use_container_width=True)
+    st.caption("Lower bar = more accurate. Green cells show which model won per city.")
 
     # -----------------------------------------------------------------------
     # SECTION 3 -- City-wise Confusion Matrix
