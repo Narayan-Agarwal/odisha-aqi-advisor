@@ -84,14 +84,21 @@ def fetch_latest_waqi(city_name: str):
 
 
 def compute_features_for_new_row(new_row: dict, city_df: pd.DataFrame) -> dict:
-    """Compute the 10 engineered features using the city's existing history."""
+    """Compute all 13 engineered features using the city's existing history."""
     city_df = city_df.sort_values("date")
     last = city_df.iloc[-1]
     date = pd.to_datetime(new_row["date"])
     month = date.month
 
-    new_row["aqi_yesterday"]      = float(last["aqi"]) if pd.notna(last["aqi"]) else city_df["aqi"].median()
-    new_row["aqi_7day_avg"]       = float(city_df["aqi"].tail(7).mean())
+    aqi_yesterday = float(last["aqi"]) if pd.notna(last["aqi"]) else float(city_df["aqi"].median())
+    aqi_7day_avg  = float(city_df["aqi"].tail(7).mean())
+    aqi_30day_avg = float(city_df["aqi"].tail(30).mean()) if len(city_df) >= 7 else aqi_7day_avg
+    aqi_momentum  = aqi_yesterday - aqi_7day_avg
+
+    new_row["aqi_yesterday"]      = aqi_yesterday
+    new_row["aqi_7day_avg"]       = aqi_7day_avg
+    new_row["aqi_30day_avg"]      = aqi_30day_avg
+    new_row["aqi_momentum"]       = aqi_momentum
     new_row["pm25_lag1"]          = float(last["pm25"]) if pd.notna(last.get("pm25")) else float(city_df["pm25"].median())
     new_row["pm10_lag1"]          = float(last["pm10"]) if pd.notna(last.get("pm10")) else float(city_df["pm10"].median())
     new_row["so2_lag1"]           = float(last["so2"])  if pd.notna(last.get("so2"))  else float(city_df["so2"].median())
@@ -99,6 +106,7 @@ def compute_features_for_new_row(new_row: dict, city_df: pd.DataFrame) -> dict:
     new_row["month"]              = month
     new_row["is_winter"]          = 1 if month in [11, 12, 1] else 0
     new_row["is_monsoon"]         = 1 if month in [7, 8, 9]   else 0
+    new_row["is_pre_monsoon"]     = 1 if month in [4, 5]      else 0
     new_row["is_industrial_peak"] = 1 if month in [10, 11, 12, 1, 2] else 0
     return new_row
 
