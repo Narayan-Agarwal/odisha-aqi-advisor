@@ -56,18 +56,52 @@ def train_linear(X_train: np.ndarray, y_train: np.ndarray) -> LinearRegression:
     return model
 
 
-def train_xgboost(X_train: np.ndarray, y_train: np.ndarray) -> XGBRegressor:
-    """Fit and return an XGBRegressor with canonical hyperparameters."""
-    model = XGBRegressor(
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=5,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        verbosity=0,
-    )
+# Cities with fundamentally different AQI patterns (high variance, spike events)
+INDUSTRIAL_CITIES_MODEL = {"Angul", "Talcher", "Rourkela", "Sambalpur", "Jharsuguda"}
+
+
+def train_xgboost(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    city: str = "",
+) -> XGBRegressor:
+    """Fit and return an XGBRegressor with tuned hyperparameters.
+
+    Industrial cities use higher regularisation to handle spike events.
+    Non-industrial cities use slightly looser params for cleaner patterns.
+    """
+    if city in INDUSTRIAL_CITIES_MODEL:
+        # Higher regularisation for industrial cities (spike-prone)
+        model = XGBRegressor(
+            n_estimators=500,
+            learning_rate=0.01,
+            max_depth=6,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            min_child_weight=5,
+            gamma=0.2,
+            reg_alpha=0.2,
+            reg_lambda=1.5,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=0,
+        )
+    else:
+        # Standard params for urban / clean-baseline cities
+        model = XGBRegressor(
+            n_estimators=500,
+            learning_rate=0.01,
+            max_depth=5,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_weight=3,
+            gamma=0.1,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=0,
+        )
     model.fit(X_train, y_train)
     return model
 
